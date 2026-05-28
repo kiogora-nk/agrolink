@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market2Farm - {% block title %}Biological Fresh{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/custom.css">
+    <style>
+        .btn-yellow { background-color: #eab308; color: #1e293b; }
+        .btn-yellow:hover { background-color: #ca8a04; }
+        .border-yellow { border-color: #eab308; }
+        .text-yellow { color: #eab308; }
+        .bg-yellow-soft { background-color: #fef9c3; }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen bg-green-50 text-slate-900 flex flex-col">
+    <!-- Loading spinner overlay -->
+    <div id="global-loading" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+        <div style="border:4px solid #f3f3f3; border-top:4px solid #16a34a; border-radius:50%; width:40px; height:40px; animation:spin 1s linear infinite;"></div>
+    </div>
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <script>
+        function showLoading() { document.getElementById('global-loading').style.display = 'flex'; }
+        function hideLoading() { document.getElementById('global-loading').style.display = 'none'; }
+        // Auto-hide flash messages after 2 seconds
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(() => {
+                document.querySelectorAll('.mb-4.rounded.border.p-3').forEach(el => el.style.display = 'none');
+            }, 2000);
+        });
+    </script>
+
+    <nav class="sticky top-0 z-40 bg-green-800 text-white shadow-sm">
+        <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <a href="/" class="text-2xl font-bold">Market2Farm</a>
+            <div class="flex flex-wrap items-center gap-3 text-sm">
+                <a href="/marketplace" class="hover:underline">Marketplace</a>
+                <a href="/climate-page" class="hover:underline">Climate</a>
+                <a href="/disease-detection" class="hover:underline">Disease AI</a>
+                <a href="/start-chat" class="hover:underline">📩 Support</a>
+                {% if current_user.is_authenticated %}
+                    <a href="/my_notifications" class="relative hover:underline">Notifications <span id="notif-badge" class="hidden rounded-full bg-red-500 px-1.5 py-0.5 text-xs text-white"></span></a>
+                    <a href="/cart" class="hover:underline">🛒 Cart</a>
+                    <a href="/my_orders" class="hover:underline">My Orders</a>
+                    <a href="/my_inquiries" class="hover:underline">My Inquiries</a>
+                    {% if current_user.role in ['admin', 'chief_admin'] %}
+<a href="/admin/chats" class="relative hover:underline">📬 Admin Chats
+    {% if unread_chat_count > 0 %}
+    <span class="absolute -top-1 -right-2 rounded-full bg-red-500 px-1.5 py-0.5 text-xs text-white">{{ unread_chat_count }}</span>
+    {% endif %}
+</a>
+{% else %}
+<a href="/my_chats" class="relative hover:underline">💬 Chats 
+    {% if unread_chat_count > 0 %}
+    <span class="absolute -top-1 -right-2 rounded-full bg-red-500 px-1.5 py-0.5 text-xs text-white">{{ unread_chat_count }}</span>
+    {% endif %}
+</a>
+{% endif %}
+                    <div class="flex items-center gap-2">
+                        {% if current_user.avatar %}
+                        <img src="{{ url_for('uploaded_file', filename=current_user.avatar) if not current_user.avatar.startswith('http') else current_user.avatar }}" class="w-6 h-6 rounded-full object-cover" onerror="this.src='https://ui-avatars.com/api/?name={{ current_user.username }}&background=16a34a&color=fff'">
+                        {% else %}
+                        <img src="https://ui-avatars.com/api/?name={{ current_user.username }}&background=16a34a&color=fff" class="w-6 h-6 rounded-full">
+                        {% endif %}
+                        <a href="/dashboard" class="hover:underline">{{ current_user.username }}</a>
+                    </div>
+                    {% if current_user.role == 'admin' %}
+                        <a href="/admin/dashboard" class="rounded bg-white/15 px-2 py-1 font-bold">Admin Panel</a>
+                    {% endif %}
+                    {% if current_user.role == 'chief_admin' %}
+                        <a href="/chief-admin" class="rounded bg-amber-400 px-2 py-1 font-bold text-slate-950">Chief Panel</a>
+                    {% endif %}
+                    <a href="/logout" class="text-red-200 hover:underline">Logout</a>
+                {% else %}
+                    <a href="/login" class="hover:underline">Login</a>
+                    <a href="/register" class="rounded bg-lime-300 px-3 py-1 font-bold text-slate-950">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <main class="mx-auto min-h-[70vh] w-full max-w-7xl flex-grow p-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="mb-4 rounded border p-3 {{ 'border-green-300 bg-green-100 text-green-800' if category == 'success' else 'border-red-300 bg-red-100 text-red-800' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="bg-gradient-to-r from-green-900 to-green-800 text-white mt-8">
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div>
+                    <h3 class="text-xl font-bold mb-3">Market2Farm</h3>
+                    <p class="text-green-100 text-sm">Connecting farmers to buyers through trusted admin‑controlled marketplace. AI crop support, climate intelligence, and secure payments.</p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-3">Quick Links</h3>
+                    <ul class="space-y-2 text-sm">
+                        <li><a href="/marketplace" class="text-green-200 hover:text-white">Marketplace</a></li>
+                        <li><a href="/about" class="text-green-200 hover:text-white">About</a></li>
+                        <li><a href="/terms" class="text-green-200 hover:text-white">Terms & Conditions</a></li>
+                        <li><a href="/disease-detection" class="text-green-200 hover:text-white">Disease AI</a></li>
+                        <li><a href="/climate-page" class="text-green-200 hover:text-white">Climate Intelligence</a></li>
+                        <li><a href="/about-system" class="text-green-200 hover:text-white">About System</a></li>
+                        <li><a href="/start-chat" class="text-green-200 hover:text-white">Support Chat</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-3">Contact & Social</h3>
+                    <div class="flex flex-wrap gap-4 mb-4">
+                        <a href="https://www.facebook.com/market2farm" target="_blank" class="text-green-200 hover:text-white text-2xl"><i class="fab fa-facebook"></i></a>
+                        <a href="https://www.instagram.com/market2farm" target="_blank" class="text-green-200 hover:text-white text-2xl"><i class="fab fa-instagram"></i></a>
+                        <a href="https://www.tiktok.com/@market2farm" target="_blank" class="text-green-200 hover:text-white text-2xl"><i class="fab fa-tiktok"></i></a>
+                        <a href="https://wa.me/254700000000" target="_blank" class="text-green-200 hover:text-white text-2xl"><i class="fab fa-whatsapp"></i></a>
+                        <a href="mailto:support@market2farm.com" class="text-green-200 hover:text-white text-2xl"><i class="fas fa-envelope"></i></a>
+                    </div>
+                    <p class="text-sm text-green-200"><i class="fas fa-phone-alt mr-2"></i> +254 700 000 000</p>
+                    <p class="text-sm text-green-200"><i class="fas fa-envelope mr-2"></i> support@market2farm.com</p>
+                </div>
+            </div>
+            <div class="border-t border-green-700 mt-6 pt-4 text-center text-green-300 text-sm">
+                Copyright 2025 Market2Farm - Biological Fresh | <strong>Kiogo Systems</strong>
+            </div>
+        </div>
+    </footer>
+
+    <div id="chatbot-widget" class="fixed bottom-3 right-3 z-50 sm:bottom-5 sm:right-5">
+        <button id="chat-toggle" class="rounded-full bg-green-700 px-4 py-3 font-bold text-white shadow-2xl hover:bg-green-800">Chat</button>
+        <div id="chat-window" class="mt-2 hidden max-h-[80vh] w-[calc(100vw-1.5rem)] flex flex-col rounded border border-slate-200 bg-white shadow-2xl sm:h-[28rem] sm:w-96">
+            <div class="flex items-center justify-between rounded-t bg-green-800 p-3 text-white">
+                <span class="font-bold">Market2Farm AI</span>
+                <button id="close-chat" class="text-xl leading-none text-white">&times;</button>
+            </div>
+            <div id="chat-messages" class="flex-grow space-y-2 overflow-y-auto p-3 text-sm"></div>
+            <div class="flex flex-wrap gap-2 border-t p-2 text-xs">
+                <button type="button" class="quick-chat rounded bg-green-50 px-2 py-1 text-green-800" data-message="How do I order?">How to order</button>
+                <button type="button" class="quick-chat rounded bg-green-50 px-2 py-1 text-green-800" data-message="How do payments work?">Payments</button>
+                <button type="button" class="quick-chat rounded bg-green-50 px-2 py-1 text-green-800" data-message="How can I contact Market2Farm?">Contact</button>
+            </div>
+            <div class="flex gap-2 border-t p-2">
+                <input type="text" id="chat-input" placeholder="Ask in simple words..." class="min-w-0 flex-1 rounded border px-3 py-2 focus:outline-none">
+                <button id="chat-send" type="button" class="rounded bg-green-700 px-3 py-2 font-semibold text-white">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const globalCsrfToken = "{{ csrf_token }}";
+        const chatToggle = document.getElementById('chat-toggle');
+        const chatWindow = document.getElementById('chat-window');
+        const closeChat = document.getElementById('close-chat');
+        const chatInput = document.getElementById('chat-input');
+        const chatSend = document.getElementById('chat-send');
+
+        chatToggle.addEventListener('click', () => chatWindow.classList.toggle('hidden'));
+        closeChat.addEventListener('click', () => chatWindow.classList.add('hidden'));
+
+        async function sendChatMessage(message) {
+            const msg = (message || chatInput.value).trim();
+            if (!msg) return;
+            chatInput.value = '';
+            appendMessage('user', msg);
+            showLoading();
+            const res = await fetch('/api/chatbot', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': globalCsrfToken},
+                body: JSON.stringify({message: msg})
+            });
+            const data = await res.json();
+            hideLoading();
+            appendMessage('bot', data.reply || data.response || 'I could not answer that yet.');
+        }
+
+        chatInput.addEventListener('keypress', async function(e) {
+            if (e.key !== 'Enter') return;
+            sendChatMessage();
+        });
+
+        chatSend.addEventListener('click', () => sendChatMessage());
+
+        document.querySelectorAll('.quick-chat').forEach((button) => {
+            button.addEventListener('click', () => sendChatMessage(button.dataset.message || 'Help me'));
+        });
+
+        function appendMessage(sender, text) {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = sender === 'user' ? 'text-right' : 'text-left';
+            const bubble = document.createElement('span');
+            bubble.className = `inline-block max-w-[85%] whitespace-pre-wrap rounded px-3 py-2 ${sender === 'user' ? 'bg-green-100' : 'bg-slate-100'}`;
+            bubble.textContent = text;
+            div.appendChild(bubble);
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updateNotificationBadge() {
+            const badge = document.getElementById('notif-badge');
+            if (!badge) return;
+            fetch('/api/notifications/unread-count')
+                .then(res => res.ok ? res.json() : { unread: 0 })
+                .then(data => {
+                    if (data.unread > 0) {
+                        badge.textContent = data.unread;
+                        badge.classList.remove('hidden');
+                    } else {
+                        badge.classList.add('hidden');
+                    }
+                })
+                .catch(() => {});
+        }
+        updateNotificationBadge();
+        setInterval(updateNotificationBadge, 30000);
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

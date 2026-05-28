@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Shopping Cart{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-bold mb-4">Your Cart</h2>
+<div id="cart-items">
+    {% for cart_item, product in cart_items %}
+    <div class="bg-white p-4 rounded shadow mb-3 flex justify-between items-center" data-item-id="{{ cart_item.id }}">
+        <div>
+            <p class="font-bold">{{ product.name }}</p>
+            <p>KES {{ "{:,.0f}".format(product.price) }} x <span class="item-qty">{{ cart_item.quantity }}</span> = <strong class="item-total">KES {{ "{:,.0f}".format(product.price * cart_item.quantity) }}</strong></p>
+        </div>
+        <div>
+            <input type="number" min="1" value="{{ cart_item.quantity }}" class="qty-input w-16 border rounded px-2 py-1" data-id="{{ cart_item.id }}">
+            <button class="remove-item bg-red-600 text-white px-3 py-1 rounded ml-2" data-id="{{ cart_item.id }}">Remove</button>
+        </div>
+    </div>
+    {% else %}
+    <p class="text-gray-600">Your cart is empty. <a href="/marketplace" class="text-green-600 underline">Continue shopping</a></p>
+    {% endfor %}
+</div>
+{% if cart_items %}
+<div class="mt-4 text-right">
+    <p class="text-xl font-bold">Total: KES <span id="cart-total">{{ "{:,.0f}".format(total) }}</span></p>
+    <button id="checkout-btn" class="bg-green-700 text-white px-6 py-2 rounded mt-2">Checkout (Pay Later)</button>
+</div>
+{% endif %}
+
+{% if pagination and pagination.pages > 1 %}
+<div class="flex justify-center gap-2 mt-6">
+    {% if pagination.has_prev %}
+    <a href="{{ url_for('view_cart', page=pagination.prev_num) }}" class="px-3 py-1 bg-gray-200 rounded">Previous</a>
+    {% endif %}
+    <span class="px-3 py-1">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    {% if pagination.has_next %}
+    <a href="{{ url_for('view_cart', page=pagination.next_num) }}" class="px-3 py-1 bg-gray-200 rounded">Next</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<script>
+async function updateCartItem(itemId, quantity) {
+    const res = await fetch('/api/cart/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': globalCsrfToken },
+        body: JSON.stringify({ item_id: itemId, quantity })
+    });
+    if (res.ok) location.reload();
+}
+async function removeItem(itemId) {
+    await fetch('/api/cart/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': globalCsrfToken },
+        body: JSON.stringify({ item_id: itemId })
+    });
+    location.reload();
+}
+document.querySelectorAll('.qty-input').forEach(input => {
+    input.addEventListener('change', function() {
+        updateCartItem(this.dataset.id, parseInt(this.value));
+    });
+});
+document.querySelectorAll('.remove-item').forEach(btn => {
+    btn.addEventListener('click', function() {
+        removeItem(this.dataset.id);
+    });
+});
+
+// Updated checkout button handler with loading spinner
+document.getElementById('checkout-btn')?.addEventListener('click', async () => {
+    showLoading();
+    const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': globalCsrfToken }
+    });
+    const data = await res.json();
+    hideLoading();
+    if (data.success) window.location.href = data.redirect;
+    else alert(data.error);
+});
+</script>
+{% endblock %}

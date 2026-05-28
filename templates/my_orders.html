@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}My Orders{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-bold mb-4">My Orders</h2>
+<div class="space-y-4">
+    {% for order in orders %}
+    <div class="bg-white p-4 rounded shadow">
+        <div class="flex justify-between items-start">
+            <div>
+                <p class="font-bold">Order #{{ order.id }}</p>
+                <p class="text-sm text-gray-600">Product ID: {{ order.product_id }} | Quantity: {{ order.quantity }}</p>
+                <p class="text-lg font-semibold text-green-800">KES {{ "{:,.0f}".format(order.total_price) }}</p>
+                <p class="text-sm">Status: <span class="font-semibold">{{ order.status }}</span></p>
+                <p class="text-xs text-gray-500">{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+            </div>
+            {% if order.status == 'pending_payment' %}
+            <a href="/product/{{ order.product_id }}" class="bg-green-600 text-white px-3 py-1 rounded text-sm">Pay Now</a>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <p class="text-gray-600">No orders yet. <a href="/marketplace" class="text-green-600 underline">Shop now</a></p>
+    {% endfor %}
+</div>
+{% endblock %}

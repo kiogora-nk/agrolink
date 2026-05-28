@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}About Market2Farm System{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto bg-white p-8 rounded shadow">
+    <h1 class="text-3xl font-bold text-green-800 mb-4">Market2Farm – Centralized Agricultural Commerce</h1>
+    <div class="prose">
+        <p>Market2Farm is an AI‑powered platform that connects farmers directly to buyers through a secure, admin‑mediated marketplace. All communication, payments, and logistics are coordinated by platform administrators to ensure trust and safety.</p>
+        <h2 class="text-xl font-bold mt-4">Key Features</h2>
+        <ul>
+            <li><strong>AI Crop Disease Detection</strong> – Uses OpenAI to diagnose plant diseases from images and symptom descriptions.</li>
+            <li><strong>Climate Intelligence</strong> – Real‑time weather forecasts with actionable farming advice.</li>
+            <li><strong>Admin‑Centric Market</strong> – Products are approved by admins; buyer‑seller connections are mediated.</li>
+            <li><strong>Secure Payments</strong> – M‑Pesa, Airtel Money, bank transfer, PayPal, Stripe, and Binance Pay.</li>
+            <li><strong>Inquiry System</strong> – Buyers can ask questions to admins; admins reply in a chat interface.</li>
+            <li><strong>Notifications</strong> – In‑platform, email, and SMS alerts for orders, inquiries, and admin messages.</li>
+            <li><strong>User Dashboard</strong> – View orders, wallet, cart, and manage profile.</li>
+        </ul>
+        <p class="mt-4">Built with Flask, Tailwind CSS, and OpenAI. All data is encrypted and access is role‑based.</p>
+    </div>
+</div>
+{% endblock %}

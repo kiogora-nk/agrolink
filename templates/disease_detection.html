@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Disease Detection{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-bold mb-4">AI Crop Disease Detection</h2>
+<p class="mb-4 text-gray-600">Upload a photo or use your camera, describe symptoms, and our AI will diagnose the crop disease.</p>
+<form id="disease-form" class="max-w-lg bg-white p-6 rounded shadow" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <textarea name="description" placeholder="Describe symptoms (e.g., yellow spots on leaves, wilting)..." class="w-full p-2 mb-3 border rounded"></textarea>
+    <select name="crop_type" id="crop_type" class="w-full p-2 mb-3 border rounded">
+        <option value="general">Select crop (optional)</option>
+        <option value="tomato">Tomato</option>
+        <option value="maize">Maize</option>
+        <option value="avocado">Avocado</option>
+        <option value="onion">Onion</option>
+        <option value="dragon_fruit">Dragon Fruit</option>
+        <option value="potato">Potato</option>
+    </select>
+    <!-- File input with camera button -->
+    <div class="flex gap-2 mb-3">
+        <input type="file" name="image" accept="image/*" class="w-full p-2 border rounded" id="image-input">
+        <button type="button" id="camera-btn" class="bg-gray-600 text-white px-4 py-2 rounded">📷 Open Camera</button>
+    </div>
+    <button type="submit" id="analyze-btn" class="bg-green-600 text-white px-4 py-2 rounded">Analyze</button>
+    <div id="loading" class="hidden mt-3 text-blue-600">Analyzing... Please wait.</div>
+</form>
+<div id="result" class="mt-4 p-4 bg-white rounded shadow"></div>
+
+<script>
+document.getElementById('camera-btn').addEventListener('click', () => {
+    const input = document.getElementById('image-input');
+    input.setAttribute('capture', 'environment');
+    input.click();
+    setTimeout(() => input.removeAttribute('capture'), 1000);
+});
+
+document.getElementById('disease-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const resultDiv = document.getElementById('result');
+    const loadingDiv = document.getElementById('loading');
+    loadingDiv.classList.remove('hidden');
+    resultDiv.innerHTML = '';
+    showLoading();
+    try {
+        const response = await fetch('/api/disease/detect', {
+            method: 'POST',
+            body: formData
+        });
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+        }
+        const data = await response.json();
+        hideLoading();
+        loadingDiv.classList.add('hidden');
+        resultDiv.innerHTML = `
+            <strong>Diagnosis:</strong> ${data.disease}<br>
+            <strong>Confidence:</strong> ${(data.confidence * 100).toFixed(1)}%<br>
+            <strong>Treatment:</strong> ${data.treatment}<br>
+            ${data.prevention ? `<strong>Prevention:</strong> ${data.prevention}<br>` : ''}
+            ${data.note ? `<strong>Note:</strong> ${data.note}` : ''}
+        `;
+    } catch (err) {
+        hideLoading();
+        loadingDiv.classList.add('hidden');
+        resultDiv.innerHTML = `<p class="text-red-600">Error: ${err.message}</p>`;
+    }
+});
+</script>
+{% endblock %}

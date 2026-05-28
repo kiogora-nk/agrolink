@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+{% if subscription_plan and subscription_plan.is_active and not current_user.subscription_active %}
+<div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+    <p class="font-semibold text-yellow-800">Upgrade to {{ subscription_plan.name }} for KES {{ subscription_plan.price_monthly }}/month</p>
+    <a href="/subscribe" class="inline-block mt-2 bg-yellow-500 text-white px-3 py-1 rounded text-sm">Subscribe Now</a>
+</div>
+{% endif %}
+<h2 class="text-3xl font-bold mb-4">Welcome, {{ current_user.username }}!</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="bg-white p-6 rounded shadow">
+        <h3 class="font-bold text-lg">Your Profile</h3>
+        <p>Role: {{ current_user.role }}</p>
+        <p>Subscription: {{ current_user.subscription_plan or 'Free' }} – 
+           {% if current_user.subscription_active %} Active {% else %} Inactive {% endif %}</p>
+        <a href="/profile/{{ current_user.id }}" class="text-green-600 underline">View Public Profile</a> |
+        <a href="/profile/edit" class="text-green-600 underline">Edit Profile</a>
+    </div>
+    <div class="bg-white p-6 rounded shadow">
+        <h3 class="font-bold text-lg">Wallet & Orders</h3>
+        <a href="{{ url_for('start_chat') }}" class="inline-block mt-2 bg-yellow-500 text-white px-4 py-2 rounded">💬 Contact Admin</a>
+        <p>Wallet Balance: <strong id="wallet-balance">Loading...</strong> KSH</p>
+        <a href="/cart" class="text-green-600 underline">🛒 View Cart</a> |
+        <a href="/my_orders" class="text-green-600 underline">📦 My Orders</a>
+    </div>
+</div>
+
+<!-- Recent orders section -->
+<div class="bg-white p-6 rounded shadow mt-6">
+    <h3 class="text-xl font-bold mb-3">Recent Orders</h3>
+    <div id="recent-orders">Loading...</div>
+</div>
+
+<div class="mt-8">
+    {% if current_user.role in ['farmer', 'admin', 'chief_admin'] %}
+        <a href="/upload" class="bg-green-600 text-white px-4 py-2 rounded">Upload New Product</a>
+    {% endif %}
+    {% if current_user.role == 'admin' %}
+        <a href="/admin/dashboard" class="bg-slate-800 text-white px-4 py-2 rounded">Open Admin Dashboard</a>
+    {% endif %}
+    {% if current_user.role == 'chief_admin' %}
+        <a href="/chief-admin" class="bg-yellow-500 text-slate-950 px-4 py-2 rounded font-bold">Open Chief Dashboard</a>
+    {% endif %}
+    <a href="/seller/orders" class="bg-blue-600 text-white px-4 py-2 rounded ml-2">Seller Orders</a>
+</div>
+
+<script>
+async function loadWallet() {
+    const res = await fetch('/api/wallet');
+    const data = await res.json();
+    document.getElementById('wallet-balance').innerText = data.balance.toLocaleString();
+}
+loadWallet();
+
+fetch('/api/my-orders?limit=5')
+    .then(r => r.json())
+    .then(orders => {
+        const container = document.getElementById('recent-orders');
+        if(orders.length === 0) container.innerHTML = '<p>No orders yet. <a href="/marketplace">Start shopping</a></p>';
+        else container.innerHTML = '<ul>' + orders.map(o => `<li>Order #${o.id} - KES ${o.total} - ${o.status}</li>`).join('') + '</ul>';
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,10 @@
+[Unit]
+Description=Market2Farm Gunicorn
+After=network.target
+[Service]
+User=www-data
+WorkingDirectory=/path/to/market2farm
+ExecStart=/path/to/venv/bin/gunicorn --workers 4 --bind unix:/var/run/market2farm.sock app:app
+Restart=always
+[Install]
+WantedBy=multi-user.target

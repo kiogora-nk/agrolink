@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Reply to Inquiry{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto bg-white p-6 rounded shadow">
+    <h2 class="text-2xl font-bold mb-4">Reply to Inquiry</h2>
+    <div class="mb-4 p-3 bg-gray-100 rounded">
+        <p class="font-semibold">From: {{ inquiry.buyer.username }} ({{ inquiry.buyer.email }})</p>
+        <p>Product: {{ inquiry.product.name }}</p>
+        <p>Message: {{ inquiry.message }}</p>
+    </div>
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <textarea name="reply" rows="5" class="w-full border rounded p-3" placeholder="Write your reply here..." required></textarea>
+        <div class="mt-4 flex gap-3">
+            <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded">Send Reply</button>
+            <a href="{{ url_for('admin_inquiries') }}" class="bg-gray-300 text-gray-800 px-6 py-2 rounded">Back</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}{{ product.name }}{% endblock %}
+{% block content %}
+<section class="mx-auto max-w-5xl">
+    <div class="grid gap-6 rounded bg-white p-5 shadow-sm md:grid-cols-[1fr_0.9fr]">
+        <div>
+            <div class="aspect-[4/3] overflow-hidden rounded bg-slate-100">
+                {% if product.image %}
+                <img src="{{ url_for('uploaded_file', filename=product.image) if product.image and not product.image.startswith('http') else product.image }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://commons.wikimedia.org/wiki/Special:Redirect/file/Red%20dragon%20fruit.jpg'">
+                {% else %}
+                <div class="flex h-full items-center justify-center text-slate-400">{{ product.name }}</div>
+                {% endif %}
+            </div>
+        </div>
+        <div>
+            <p class="text-sm font-semibold uppercase tracking-wide text-green-700">{{ product.category or 'Produce' }}</p>
+            <h1 class="mt-1 text-3xl font-bold text-slate-900">{{ product.name }}</h1>
+            <p class="mt-3 text-3xl font-extrabold text-green-800" id="display-price" data-price-ksh="{{ product.price or 0 }}">KSH {{ "{:,.0f}".format(product.price or 0) }}</p>
+            <p class="mt-4 text-slate-700">{{ product.description }}</p>
+            <p class="mt-3 text-sm text-slate-500">Organic: {{ 'Yes' if product.organic else 'No' }}</p>
+
+            {% if current_user.is_authenticated %}
+            <div class="mt-6 rounded border border-slate-200 p-4">
+                <h2 class="font-bold">Order through admin-secured connection</h2>
+                <p class="mt-1 text-sm text-slate-600">After payment, an admin or chief admin approves the buyer-seller connection before direct contact.</p>
+                
+                <!-- Payment methods badge -->
+                <div class="flex gap-2 mt-2 text-sm">
+                    <span>📱 M-Pesa</span>
+                    <span>📱 Airtel Money</span>
+                    <span>💳 Visa</span>
+                    <span>🟡 Binance</span>
+                    <span>🅿️ PayPal</span>
+                    <span>🏦 Bank Transfer</span>
+                </div>
+                
+                <button id="addToCartBtn" data-product-id="{{ product.id }}" class="w-full mt-2 rounded bg-blue-600 px-5 py-3 font-bold text-white">🛒 Add to Cart</button>
+                
+                <hr class="my-3">
+                <label class="mt-2 block text-sm font-semibold">Quantity</label>
+                <input id="quantity" type="number" min="1" value="1" class="mt-1 w-28 rounded border px-3 py-2">
+                <label class="mt-4 block text-sm font-semibold">Payment method</label>
+                <select id="payment-method" class="mt-1 w-full rounded border px-3 py-2">
+                    <option value="mpesa" data-currency="KSH">📱M-Pesa STK Push - KSH</option>
+                    <option value="airtel_money" data-currency="KSH">📱Airtel Money - KSH</option>
+                    <option value="bank_transfer" data-currency="KSH">🏦Bank Transfer - KSH</option>
+                    <option value="paypal" data-currency="USD">🅿️PayPal - USD</option>
+                    <option value="stripe_card" data-currency="USD">💳Visa/Mastercard - USD</option>
+                    <option value="binance_pay" data-currency="USD">🟡Binance Pay - USD</option>
+                </select>
+                <button id="orderNowBtn" data-product-id="{{ product.id }}" class="mt-4 w-full rounded bg-green-700 px-5 py-3 font-bold text-white">Order Now and Pay</button>
+                <div id="payment-result" class="mt-4 hidden rounded border p-3 text-sm"></div>
+            </div>
+            
+            <a href="{{ url_for('product_inquiry', product_id=product.id) }}" class="block mt-3 text-center bg-amber-600 text-white px-4 py-2 rounded">📧 Ask Admin About This Product</a>
+            {% else %}
+            <a href="/login" class="mt-6 inline-block rounded bg-green-700 px-6 py-3 font-bold text-white">Login to Order or Ask Admin</a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if recommendations %}
+    <div class="mt-8">
+        <h2 class="mb-3 text-xl font-bold">Recommended produce</h2>
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {% for item in recommendations %}
+            <a href="/product/{{ item.id }}" class="rounded bg-white p-3 shadow-sm">
+                <p class="font-semibold">{{ item.name }}</p>
+                <p class="text-sm text-green-800">KES {{ "{:,.0f}".format(item.price or 0) }}</p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let csrfToken = '';
+if (typeof globalCsrfToken !== 'undefined') {
+    csrfToken = globalCsrfToken;
+} else {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    csrfToken = meta ? meta.getAttribute('content') : '{{ csrf_token }}';
+}
+
+function formatMoney(amount, currency) {
+    let num = Number(amount);
+    if (isNaN(num)) num = 0;
+    if (currency === 'USD') {
+        let usd = num / 130;
+        return 'USD ' + usd.toFixed(2);
+    }
+    return 'KSH ' + Math.round(num).toLocaleString();
+}
+
+function updateDisplayPrice() {
+    const price = Number(document.getElementById('display-price').dataset.priceKsh || 0);
+    const quantity = Number(document.getElementById('quantity').value) || 1;
+    const select = document.getElementById('payment-method');
+    const selectedOption = select.options[select.selectedIndex];
+    const currency = selectedOption.getAttribute('data-currency') || 'KSH';
+    const total = price * quantity;
+    document.getElementById('display-price').textContent = formatMoney(total, currency);
+}
+
+const addToCartBtn = document.getElementById('addToCartBtn');
+if (addToCartBtn) {
+    addToCartBtn.addEventListener('click', async function() {
+        const productId = this.getAttribute('data-product-id');
+        const quantity = Number(document.getElementById('quantity').value) || 1;
+        try {
+            const res = await fetch('/api/cart/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ product_id: parseInt(productId), quantity: quantity })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('Added to cart!');
+            } else {
+                alert('Error: ' + (data.error || 'Could not add to cart'));
+            }
+        } catch (err) {
+            alert('Network error: ' + err.message);
+        }
+    });
+}
+
+const orderNowBtn = document.getElementById('orderNowBtn');
+if (orderNowBtn) {
+    orderNowBtn.addEventListener('click', async function() {
+        const productId = this.getAttribute('data-product-id');
+        const resultDiv = document.getElementById('payment-result');
+        resultDiv.classList.remove('hidden');
+        resultDiv.className = 'mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm';
+        resultDiv.textContent = 'Creating order...';
+        const quantity = Number(document.getElementById('quantity').value) || 1;
+        const method = document.getElementById('payment-method').value;
+        
+        try {
+            // 1. Create order
+            const orderRes = await fetch('/api/orders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ product_id: parseInt(productId), quantity: quantity })
+            });
+            const orderData = await orderRes.json();
+            if (!orderRes.ok) {
+                resultDiv.className = 'mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800';
+                resultDiv.textContent = orderData.error || 'Could not create order.';
+                return;
+            }
+            
+            // 2. For mobile money (M-Pesa, Airtel) - ask for phone number
+            let paymentPayload = { order_id: orderData.order_id, payment_method: method };
+            if (method === 'mpesa' || method === 'airtel_money') {
+                const phone = prompt('Enter your phone number (e.g., 254700000000):');
+                if (!phone) {
+                    resultDiv.className = 'mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800';
+                    resultDiv.textContent = 'Phone number required. Payment cancelled.';
+                    return;
+                }
+                paymentPayload.phone = phone;
+            } 
+            // For manual methods (bank, PayPal, card, Binance) - ask for reference
+            else if (['bank_transfer', 'paypal', 'stripe_card', 'binance_pay'].includes(method)) {
+                let instructions = '';
+                if (method === 'bank_transfer') instructions = 'Please transfer to: Bank: KCB, Account: 1234567890, Name: Market2Farm Ltd. Then enter the transaction reference.';
+                else if (method === 'paypal') instructions = 'Send payment to paypal@market2farm.com. Then enter the PayPal transaction ID.';
+                else if (method === 'stripe_card') instructions = 'You will be redirected to Stripe. After payment, enter the payment intent ID.';
+                else if (method === 'binance_pay') instructions = 'Send USDT to wallet address: 0x123... Then enter the transaction hash.';
+                
+                const reference = prompt(instructions + '\n\nEnter your transaction reference:');
+                if (!reference) {
+                    resultDiv.className = 'mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800';
+                    resultDiv.textContent = 'Transaction reference required. Payment cancelled.';
+                    return;
+                }
+                paymentPayload.reference = reference;
+            }
+            
+            // 3. Initiate payment
+            resultDiv.textContent = 'Processing payment...';
+            const paymentRes = await fetch('/api/payment/initiate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify(paymentPayload)
+            });
+            const paymentData = await paymentRes.json();
+            
+            // 4. Handle response
+            if (!paymentRes.ok) {
+                resultDiv.className = 'mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800';
+                resultDiv.textContent = paymentData.error || 'Payment failed.';
+                return;
+            }
+            
+            // If manual payment requires instructions (202 status)
+            if (paymentRes.status === 202 && paymentData.requires_manual) {
+                resultDiv.className = 'mt-4 rounded border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800';
+                resultDiv.innerHTML = `<strong>Manual payment required</strong><br>${paymentData.instructions}<br><br>Please complete payment and we will verify.`;
+                return;
+            }
+            
+            // Success (auto-verified or manual reference recorded)
+            resultDiv.className = 'mt-4 rounded border border-green-200 bg-green-50 p-3 text-sm text-green-800';
+            let paidAmount = paymentData.display_amount ? paymentData.display_amount.label : 'unknown';
+            resultDiv.innerHTML = `${paymentData.message}<br>Paid: <strong>${paidAmount}</strong><br>Transaction: <strong>${paymentData.transaction_code}</strong><br>Wallet balance: KSH ${Number(paymentData.wallet_balance || 0).toLocaleString()}`;
+            
+        } catch (err) {
+            console.error(err);
+            resultDiv.className = 'mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800';
+            resultDiv.textContent = 'Network error: ' + err.message;
+        }
+    });
+}
+
+document.getElementById('quantity').addEventListener('input', updateDisplayPrice);
+document.getElementById('payment-method').addEventListener('change', updateDisplayPrice);
+updateDisplayPrice();
+</script>
+{% endblock %}

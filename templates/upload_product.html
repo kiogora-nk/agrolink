@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Upload Product{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-bold mb-4">Upload New Product</h2>
+<form method="POST" enctype="multipart/form-data" class="max-w-lg bg-white p-6 rounded shadow">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="name" placeholder="Product Name" class="w-full p-2 mb-3 border rounded" required>
+    <textarea name="description" placeholder="Description" class="w-full p-2 mb-3 border rounded" required></textarea>
+    <input name="price" type="number" step="0.01" placeholder="Price (KES)" class="w-full p-2 mb-3 border rounded" required>
+    <select name="category" class="w-full p-2 mb-3 border rounded">
+        <option>fruits</option>
+        <option>vegetables</option>
+        <option>grains</option>
+        <option>dairy</option>
+        <option>livestock</option>
+    </select>
+    <label class="flex items-center space-x-2 mb-3">
+        <input type="checkbox" name="organic"> <span>Organic</span>
+    </label>
+    <input type="file" name="image" class="w-full p-2 mb-3 border rounded">
+    <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded">Submit for Review</button>
+</form>
+{% endblock %}

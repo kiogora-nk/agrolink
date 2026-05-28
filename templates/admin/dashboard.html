@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+{% block content %}
+<section class="space-y-6">
+    <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+            <p class="text-sm font-semibold uppercase tracking-wide text-green-700">Marketplace Administration</p>
+            <h1 class="text-3xl font-bold text-slate-900">Admin Dashboard</h1>
+            <p class="text-slate-600">Approve products, moderate users, monitor orders, and keep Market2Farm trustworthy.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a href="/admin/products" class="rounded bg-green-700 px-4 py-2 text-sm font-semibold text-white">Pending Products</a>
+            <a href="/admin/send_notification" class="rounded border border-green-700 px-4 py-2 text-sm font-semibold text-green-800">Send Notification</a>
+        </div>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div class="rounded bg-white p-4 shadow-sm"><p class="text-sm text-slate-500">Total Users</p><p class="text-3xl font-bold">{{ stats.users }}</p></div>
+        <div class="rounded bg-white p-4 shadow-sm"><p class="text-sm text-slate-500">Farmers</p><p class="text-3xl font-bold">{{ stats.farmers }}</p></div>
+        <div class="rounded bg-white p-4 shadow-sm"><p class="text-sm text-slate-500">Pending Products</p><p class="text-3xl font-bold">{{ stats.pending_products }}</p></div>
+        <div class="rounded bg-white p-4 shadow-sm"><p class="text-sm text-slate-500">Paid Orders</p><p class="text-3xl font-bold">{{ stats.paid_orders }}</p></div>
+        <div class="rounded bg-white p-4 shadow-sm"><p class="text-sm text-slate-500">Revenue</p><p class="text-3xl font-bold">KES {{ "{:,.0f}".format(stats.revenue) }}</p></div>
+    </div>
+
+    <div class="grid gap-6 xl:grid-cols-3">
+        <div class="rounded bg-white p-5 shadow-sm xl:col-span-2">
+            <h2 class="mb-3 text-lg font-bold">Marketplace Health</h2>
+            <div class="grid gap-6 md:grid-cols-2">
+                <canvas id="ordersChart" height="180"></canvas>
+                <canvas id="productsChart" height="180"></canvas>
+            </div>
+        </div>
+        <div class="rounded bg-white p-5 shadow-sm">
+            <h2 class="mb-3 text-lg font-bold">AI Operations</h2>
+            <div class="space-y-3">
+                <div class="rounded border border-slate-200 p-3"><p class="text-sm text-slate-500">Chatbot requests</p><p class="text-2xl font-bold">{{ ai_usage.chatbot }}</p></div>
+                <div class="rounded border border-slate-200 p-3"><p class="text-sm text-slate-500">Disease scans</p><p class="text-2xl font-bold">{{ ai_usage.disease_scans }}</p></div>
+                <div class="rounded border border-slate-200 p-3"><p class="text-sm text-slate-500">Security risk score</p><p class="text-2xl font-bold">{{ stats.risk_score }}/100</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="rounded bg-white p-5 shadow-sm">
+        <h2 class="mb-3 text-lg font-bold">Buyer/Seller Connection Queue</h2>
+        <div class="space-y-3">
+            {% for connection in pending_connections %}
+            <div class="flex flex-col gap-2 rounded border border-slate-200 p-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <p class="font-semibold">Order #{{ connection.order_id }}</p>
+                    <p class="text-sm text-slate-600">Buyer ID {{ connection.buyer_id }} to Seller ID {{ connection.seller_id }} - {{ connection.status }}</p>
+                </div>
+                <div class="flex gap-2">
+                    <form method="POST" action="/admin/connection/{{ connection.order_id }}/approve">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input name="notes" class="rounded border px-3 py-2 text-sm" placeholder="Admin note">
+                        <button class="rounded bg-green-700 px-4 py-2 text-sm font-semibold text-white">Approve Connection</button>
+                    </form>
+                    <form method="POST" action="/admin/connect/{{ connection.order_id }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button class="rounded bg-purple-600 px-4 py-2 text-sm font-semibold text-white">Connect & Notify</button>
+                    </form>
+                </div>
+            </div>
+            {% else %}
+            <p class="text-sm text-slate-500">No paid orders waiting for connection approval.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="grid gap-6 xl:grid-cols-2">
+        <div class="rounded bg-white p-5 shadow-sm">
+            <h2 class="mb-3 text-lg font-bold">Products Needing Attention</h2>
+            <div class="space-y-3">
+                {% for product in latest_products %}
+                <div class="flex items-center justify-between gap-3 rounded border border-slate-200 p-3">
+                    <div>
+                        <p class="font-semibold">{{ product.name }}</p>
+                        <p class="text-sm text-slate-600">{{ product.category or 'Uncategorized' }} - {{ product.status }} - KES {{ "{:,.0f}".format(product.price or 0) }}</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <form method="POST" action="/admin/product/{{ product.id }}/price" class="flex flex-wrap gap-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input name="price" value="{{ product.price }}" class="w-24 rounded border px-2 py-1 text-sm">
+                            <button class="rounded bg-slate-800 px-3 py-1 text-sm font-semibold text-white">Update Price</button>
+                        </form>
+                        {% if product.status == 'pending' %}
+                        <form method="POST" action="/admin/approve/{{ product.id }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button class="rounded bg-green-700 px-3 py-1 text-sm font-semibold text-white">Approve</button>
+                        </form>
+                        {% endif %}
+                        <form method="POST" action="/admin/product/{{ product.id }}/delete" onsubmit="return confirm('Delete this product permanently?')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button class="rounded bg-red-600 px-3 py-1 text-sm font-semibold text-white">Delete</button>
+                        </form>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-sm text-slate-500">No products available.</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="rounded bg-white p-5 shadow-sm">
+            <h2 class="mb-3 text-lg font-bold">Recent Users</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-slate-100 text-left text-slate-600">
+                        <tr>
+                            <th class="p-2">User</th>
+                            <th class="p-2">Role</th>
+                            <th class="p-2">Status</th>
+                            <th class="p-2">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in recent_users %}
+                        <tr class="border-b">
+                            <td class="p-2">{{ user.username }}<br><span class="text-xs text-slate-500">{{ user.email }}</span></td>
+                            <td class="p-2">{{ user.role }}</td>
+                            <td class="p-2">{{ 'Suspended' if user.suspended else 'Active' }}</td
+                            <td class="p-2">
+                                <a href="{{ url_for('admin_send_user_message', user_id=user.id) }}" class="text-blue-600 underline text-sm">Send Message</a>
+                                <a href="{{ url_for('admin_chat', user_id=user.id) }}" class="text-purple-600 underline text-sm ml-2">Chat</a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td class="p-2 text-slate-500" colspan="4">No users yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="rounded bg-white p-5 shadow-sm">
+        <h2 class="mb-3 text-lg font-bold">Audit Trail</h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead class="bg-slate-100 text-left text-slate-600">
+                    <tr><th class="p-2">Action</th><th class="p-2">IP Address</th><th class="p-2">Time</th></td>
+                </thead>
+                <tbody>
+                    {% for log in recent_logs %}
+                    <tr class="border-b"><td class="p-2">{{ log.action }}</td><td class="p-2">{{ log.ip_address or 'unknown' }}</td><td class="p-2">{{ log.timestamp.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+                    {% else %}
+                    <tr><td class="p-2 text-slate-500" colspan="3">No audit logs yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDashboardCharts() {
+    try {
+        const response = await fetch('/api/admin/stats');
+        if (!response.ok) throw new Error('Failed to fetch stats');
+        const data = await response.json();
+        const orderStatuses = data.order_statuses;
+        const topProducts = data.top_products;
+        new Chart(document.getElementById('ordersChart'), {
+            type: 'doughnut',
+            data: { labels: Object.keys(orderStatuses), datasets: [{ data: Object.values(orderStatuses), backgroundColor: ['#16a34a', '#2563eb', '#f59e0b', '#dc2626'] }] },
+            options: { plugins: { legend: { position: 'bottom' } } }
+        });
+        new Chart(document.getElementById('productsChart'), {
+            type: 'bar',
+            data: { labels: topProducts.map(p => p.name), datasets: [{ label: 'Units sold', data: topProducts.map(p => p.units), backgroundColor: '#15803d' }] },
+            options: { plugins: { legend: { display: false } } }
+        });
+    } catch (err) {
+        console.error('Dashboard chart error:', err);
+    }
+}
+loadDashboardCharts();
+</script>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Admin - Inquiries{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-bold mb-4">All Buyer Inquiries</h2>
+<div class="space-y-4">
+    {% for inquiry in inquiries %}
+    <div class="bg-white p-4 rounded shadow">
+        <div class="flex justify-between items-start">
+            <div>
+                <p class="font-semibold">From: {{ inquiry.buyer.username }} ({{ inquiry.buyer.email }})</p>
+                <p class="text-sm">Product: <a href="{{ url_for('product_detail', id=inquiry.product_id) }}" target="_blank">{{ inquiry.product.name }}</a></p>
+                <p class="text-sm text-gray-500">Sent: {{ inquiry.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                <p class="mt-2">Message: {{ inquiry.message }}</p>
+                <p class="mt-1 text-sm">Status: <span class="font-semibold {% if inquiry.status == 'replied' %}text-green-600{% else %}text-red-600{% endif %}">{{ inquiry.status|capitalize }}</span></p>
+            </div>
+            <a href="{{ url_for('admin_inquiry_chat', inquiry_id=inquiry.id) }}" class="bg-green-600 text-white px-4 py-2 rounded text-sm">Chat</a>
+        </div>
+    </div>
+    {% else %}
+    <p class="text-gray-600">No inquiries yet.</p>
+    {% endfor %}
+</div>
+{% endblock %}

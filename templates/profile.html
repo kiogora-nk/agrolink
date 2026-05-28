@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ user.username }}'s Profile{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white p-6 rounded-2xl shadow-lg">
+    <div class="flex items-center space-x-4">
+        <img src="{{ user.avatar if user.avatar else 'https://via.placeholder.com/100' }}" alt="Avatar" class="w-20 h-20 rounded-full object-cover">
+        <div>
+            <h1 class="text-2xl font-bold">{{ user.username }}</h1>
+            <p class="text-gray-600">{{ user.role.capitalize() }}</p>
+            {% if user.location %}<p class="text-sm">📍 {{ user.location }}</p>{% endif %}
+        </div>
+        {% if current_user.id == user.id %}
+            <a href="/profile/edit" class="ml-auto bg-green-100 text-green-800 px-4 py-2 rounded-full text-sm">Edit Profile</a>
+        {% endif %}
+    </div>
+    {% if user.bio %}
+        <div class="mt-4">
+            <h3 class="font-semibold">About</h3>
+            <p class="text-gray-700">{{ user.bio }}</p>
+        </div>
+    {% endif %}
+    {% if products %}
+        <div class="mt-6">
+            <h3 class="font-semibold text-lg mb-2">Products by {{ user.username }}</h3>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {% for product in products %}
+                <div class="border rounded-lg p-2">
+                    <img src="{{ product.image if product.image else 'https://via.placeholder.com/150' }}" alt="{{ product.name }}" class="w-full h-32 object-cover rounded">
+                    <p class="font-bold mt-1">{{ product.name }}</p>
+                    <p class="text-green-700">KES {{ product.price }}</p>
+                    <a href="/product/{{ product.id }}" class="text-green-600 text-sm">View</a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

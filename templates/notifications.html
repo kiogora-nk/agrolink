@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<div class="flex justify-between items-center mb-4">
+    <h2 class="text-2xl font-bold">Your Notifications</h2>
+    <button id="mark-all-read" class="bg-green-600 text-white px-3 py-1 rounded text-sm">Mark all read</button>
+</div>
+<div class="space-y-2" id="notifications-list">
+    {% for notif in notifications %}
+    <div class="bg-white p-4 rounded shadow {{ 'opacity-50' if notif.read else '' }}" data-id="{{ notif.id }}">
+        <p>{{ notif.message }}</p>
+        <div class="flex justify-between items-center mt-2">
+            <small class="text-gray-500">{{ notif.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+            {% if not notif.read %}
+            <button data-id="{{ notif.id }}" class="mark-read-btn text-green-600 text-sm underline">Mark as read</button>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+<script>
+    async function markRead(id) {
+        const res = await fetch('/api/notifications/mark-read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': globalCsrfToken },
+            body: JSON.stringify({ notification_id: id })
+        });
+        if (res.ok) location.reload();
+    }
+
+    async function markAllRead() {
+        await fetch('/api/notifications/mark-all-read', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': globalCsrfToken }
+        });
+        location.reload();
+    }
+
+    // Attach event listeners to all "Mark as read" buttons
+    document.querySelectorAll('.mark-read-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            const id = this.getAttribute('data-id');
+            if (id) markRead(parseInt(id));
+        });
+    });
+
+    document.getElementById('mark-all-read')?.addEventListener('click', markAllRead);
+</script>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Send Notification{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-bold mb-4">Send Notification</h2>
+<form method="POST" class="max-w-lg bg-white p-6 rounded shadow">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <select name="user_id" class="w-full p-2 mb-3 border rounded">
+        <option value="">All Users</option>
+        {% for user in users %}
+            <option value="{{ user.id }}">{{ user.username }} ({{ user.role }})</option>
+        {% endfor %}
+    </select>
+    <textarea name="message" placeholder="Notification message" class="w-full p-2 mb-3 border rounded" required></textarea>
+    <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded">Send</button>
+</form>
+{% endblock %}

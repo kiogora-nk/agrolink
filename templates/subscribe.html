@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Subscribe{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-lg rounded bg-white p-6 text-center shadow-sm">
+    <p class="text-sm font-semibold uppercase tracking-wide text-green-700">Premium access</p>
+    <h1 class="mt-1 text-3xl font-bold">Upgrade to {{ plan.name }}</h1>
+    <p class="mt-4 text-3xl font-extrabold text-green-800">KES {{ "{:,.0f}".format(plan.price_monthly or 0) }} / month</p>
+    <p class="text-sm text-slate-500">or KES {{ "{:,.0f}".format(plan.price_yearly or 0) }} yearly</p>
+    <select id="payment-method" class="mt-5 w-full rounded border px-3 py-2">
+        <option value="mpesa">M-Pesa STK Push</option>
+        <option value="airtel_money">Airtel Money</option>
+        <option value="bank_transfer">Bank Transfer</option>
+        <option value="paypal">PayPal</option>
+        <option value="stripe_card">Visa/Mastercard</option>
+        <option value="binance_pay">Binance Pay</option>
+    </select>
+    <button onclick="activateSubscription()" class="mt-4 w-full rounded bg-green-700 px-6 py-3 font-bold text-white">Pay and Activate Automatically</button>
+    <div id="subscription-result" class="mt-4 hidden rounded border p-3 text-sm"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function activateSubscription() {
+    const box = document.getElementById('subscription-result');
+    box.className = 'mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm';
+    box.textContent = 'Verifying payment...';
+    const res = await fetch('/api/subscription/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': globalCsrfToken },
+        body: JSON.stringify({ payment_method: document.getElementById('payment-method').value })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        box.className = 'mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800';
+        box.textContent = data.error || 'Subscription activation failed.';
+        return;
+    }
+    box.className = 'mt-4 rounded border border-green-200 bg-green-50 p-3 text-sm text-green-800';
+    box.textContent = data.message;
+    setTimeout(() => window.location.href = data.redirect || '/dashboard', 900);
+}
+</script>
+{% endblock %}

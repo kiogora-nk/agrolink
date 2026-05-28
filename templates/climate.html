@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Climate Intelligence{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-bold mb-4">Climate Intelligence</h2>
+<div id="climate-data" class="bg-white p-4 rounded shadow">
+    <button onclick="getClimate()" class="bg-green-600 text-white px-4 py-2 rounded mb-4">Get Forecast</button>
+    <div id="climate-result"></div>
+</div>
+<script>
+async function getClimate() {
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const res = await fetch(`/api/climate?lat=${lat}&lon=${lon}`);
+        const data = await res.json();
+        let html = `Temperature max: ${data.temperature_max}°C<br>Rain: ${data.precipitation} mm`;
+        if (data.recommendations) {
+            html += '<br><strong>Recommendations:</strong><ul>';
+            data.recommendations.forEach(r => html += `<li>${r}</li>`);
+            html += '</ul>';
+        }
+        document.getElementById('climate-result').innerHTML = html;
+    }, () => {
+        fetch('/api/climate').then(r=>r.json()).then(data => {
+            document.getElementById('climate-result').innerHTML = `Temperature: ${data.temperature_max}°C, Rain: ${data.precipitation} mm`;
+        });
+    });
+}
+</script>
+{% endblock %}

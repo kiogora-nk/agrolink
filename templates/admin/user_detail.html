@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}User Details - {{ user.username }}{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="bg-white p-6 rounded shadow mb-6">
+        <h2 class="text-2xl font-bold mb-4">User Information</h2>
+        <div class="grid grid-cols-2 gap-4">
+            <div><span class="font-semibold">Username:</span> {{ user.username }}</div>
+            <div><span class="font-semibold">Email:</span> {{ user.email }}</div>
+            <div><span class="font-semibold">Phone:</span> {{ user.phone or 'Not provided' }}</div>
+            <div><span class="font-semibold">Location:</span> {{ user.location or 'Not provided' }}</div>
+            <div><span class="font-semibold">Role:</span> {{ user.role }}</div>
+            <div><span class="font-semibold">Verified:</span> {{ 'Yes' if user.verified else 'No' }}</div>
+            <div><span class="font-semibold">Suspended:</span> {{ 'Yes' if user.suspended else 'No' }}</div>
+            <div><span class="font-semibold">Joined:</span> {{ user.created_at.strftime('%Y-%m-%d') }}</div>
+        </div>
+    </div>
+
+    {% if user.role == 'farmer' %}
+    <div class="bg-white p-6 rounded shadow mb-6">
+        <h3 class="text-xl font-bold mb-3">Farmer Products</h3>
+        {% if products %}
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {% for product in products %}
+            <div class="border rounded p-2">
+                <p class="font-semibold">{{ product.name }}</p>
+                <p class="text-sm text-gray-600">KES {{ product.price }}</p>
+                <p class="text-xs">Status: {{ product.status }}</p>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-600">No products listed.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="bg-white p-6 rounded shadow mb-6">
+        <h3 class="text-xl font-bold mb-3">Orders as Buyer</h3>
+        {% if orders_as_buyer %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+                <thead class="bg-gray-100">
+                    <tr><th class="p-2">Order #</th><th>Product</th><th>Qty</th><th>Total</th><th>Status</th><th>Date</th></tr>
+                </thead>
+                <tbody>
+                    {% for order in orders_as_buyer %}
+                    <tr class="border-b">
+                        <td class="p-2">{{ order.id }}</td>
+                        <td>{{ order.product.name }}</td>
+                        <td>{{ order.quantity }}</td>
+                        <td>KES {{ order.total_price }}</td>
+                        <td>{{ order.status }}</td>
+                        <td>{{ order.created_at.strftime('%Y-%m-%d') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-600">No orders placed.</p>
+        {% endif %}
+    </div>
+
+    <div class="bg-white p-6 rounded shadow">
+        <h3 class="text-xl font-bold mb-3">Inquiries Sent</h3>
+        {% if inquiries %}
+        <div class="space-y-3">
+            {% for inquiry in inquiries %}
+            <div class="border rounded p-3">
+                <p class="font-semibold">Product: {{ inquiry.product.name }}</p>
+                <p class="text-sm">Message: {{ inquiry.message }}</p>
+                <p class="text-xs text-gray-500">Sent: {{ inquiry.created_at.strftime('%Y-%m-%d %H:%M') }} | Status: {{ inquiry.status }}</p>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-600">No inquiries sent.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

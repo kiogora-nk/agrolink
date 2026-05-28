@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Send Message to {{ user.username }}{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto bg-white p-6 rounded shadow">
+    <h2 class="text-2xl font-bold mb-4">Send Message to {{ user.username }}</h2>
+    <div class="mb-4 p-3 bg-gray-100 rounded">
+        <p><strong>Email:</strong> {{ user.email }}</p>
+        <p><strong>Phone:</strong> {{ user.phone or 'Not provided' }}</p>
+        <p><strong>Role:</strong> {{ user.role }}</p>
+    </div>
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="mb-3">
+            <label class="block font-semibold">Subject</label>
+            <input type="text" name="subject" class="w-full border rounded px-3 py-2" value="Message from Market2Farm Admin" required>
+        </div>
+        <div class="mb-3">
+            <label class="block font-semibold">Message</label>
+            <textarea name="message" rows="6" class="w-full border rounded px-3 py-2" placeholder="Write your message here..." required></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="flex items-center gap-2">
+                <input type="checkbox" name="send_email"> Also send via email (if available)
+            </label>
+            <label class="flex items-center gap-2 mt-1">
+                <input type="checkbox" name="send_sms"> Also send via SMS (if phone number available)
+            </label>
+        </div>
+        <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded">Send Message</button>
+        <a href="{{ url_for('admin_dashboard') }}" class="ml-2 bg-gray-300 px-4 py-2 rounded">Cancel</a>
+    </form>
+</div>
+{% endblock %}
