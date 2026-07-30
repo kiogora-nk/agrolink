@@ -1,0 +1,13 @@
+﻿services:
+  - type: web
+    name: market2farm
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: false

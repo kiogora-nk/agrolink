@@ -3,6 +3,10 @@
 import sqlite3, os, csv, json, argparse
 from datetime import datetime
 from werkzeug.security import generate_password_hash
+# near top of app.py
+import os
+if not os.getenv('DATABASE_URL'):
+    os.environ['DATABASE_URL'] = 'sqlite:///market2farm.db'
 
 DB_PATH = os.getenv('DATABASE_URL', 'sqlite:///market2farm.db').replace('sqlite:///', '')
 
@@ -78,6 +82,15 @@ def init():
         status TEXT DEFAULT 'pending',
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (order_id) REFERENCES "order" (id)
+    );
+    CREATE TABLE IF NOT EXISTS executive_update (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        attachment TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        published_by INTEGER,
+        FOREIGN KEY (published_by) REFERENCES user (id)
     );
     CREATE TABLE IF NOT EXISTS notification (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,5 +1,6 @@
-import os, io, json, random, secrets, re
+import os, io, json, random, secrets, re, logging, sys
 from datetime import datetime, timedelta, date
+from zoneinfo import ZoneInfo
 from functools import wraps
 from dotenv import load_dotenv
 load_dotenv()
@@ -15,7 +16,24 @@ from flask_login import (LoginManager, login_user, logout_user, login_required,
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_mail import Mail, Message
 from flask_compress import Compress
+from flask_talisman import Talisman
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+from werkzeug.exceptions import BadRequest
+
+# Monkey-patch werkzeug to suppress TLS handshake error logging
+import werkzeug.serving
+original_log_request = werkzeug.serving.WSGIRequestHandler.log_request
+
+def silent_log_request(self, code='-', size='-'):
+    # Suppress 400 errors from malformed TLS requests
+    if code == 400:
+        return
+    original_log_request(self, code, size)
+
+werkzeug.serving.WSGIRequestHandler.log_request = silent_log_request
+
+# Suppress werkzeug console output
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 try:
     from flask_caching import Cache
@@ -48,17 +66,75 @@ from authlib.integrations.flask_client import OAuth
 from openai import OpenAI
 from sqlalchemy import func, extract, text
 
-# ---------- App Initialization ----------
+# -------------------------------------------------------------------
+# Optional production dependencies
+# -------------------------------------------------------------------
+try:
+    import cloudinary
+    import cloudinary.uploader
+    from cloudinary.utils import cloudinary_url
+except ImportError:
+    cloudinary = None
+
+try:
+    import stripe
+except ImportError:
+    stripe = None
+
+try:
+    import pytz
+except ImportError:
+    pytz = None
+
+# -------------------------------------------------------------------
+# Robust nairobi_now() with fallbacks
+# -------------------------------------------------------------------
+def nairobi_now():
+    try:
+        return datetime.now(ZoneInfo("Africa/Nairobi")).replace(tzinfo=None)
+    except Exception:
+        try:
+            if pytz:
+                tz = pytz.timezone('Africa/Nairobi')
+                return datetime.now(tz).replace(tzinfo=None)
+        except Exception:
+            pass
+        return datetime.utcnow()
+
+# -------------------------------------------------------------------
+# App Initialization
+# -------------------------------------------------------------------
 app = Flask(__name__)
+
+# Handle bad requests gracefully
+@app.errorhandler(BadRequest)
+def handle_bad_request(e):
+    return "Bad Request", 400
+
+# FIXED: Only enforce HTTPS in production when DEBUG is False
+# AND when not running locally (check for localhost)
+debug_mode = os.getenv('DEBUG', 'False').lower() == 'true'
+is_local = os.getenv('LOCAL_DEV', 'True').lower() == 'true'
+
+if not debug_mode and not is_local:
+    Talisman(app, content_security_policy=None, force_https=True)
+else:
+    # In development, don't force HTTPS
+    print("Running in development mode - HTTPS enforcement disabled")
+
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', secrets.token_hex(32))
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', secrets.token_hex(32))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///market2farm.db')
+
+# Database: SQLite only
+database_url = 'sqlite:///market2farm.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_size': 10,
     'pool_recycle': 3600,
     'pool_pre_ping': True
 }
+
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['SITE_URL'] = os.getenv('SITE_URL', 'http://localhost:5000')
@@ -72,6 +148,17 @@ app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', 'noreply@market2farm.com')
 
+if cloudinary:
+    cloudinary.config(
+        cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+        api_key=os.getenv('CLOUDINARY_API_KEY'),
+        api_secret=os.getenv('CLOUDINARY_API_SECRET'),
+        secure=True
+    )
+
+if stripe:
+    stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+
 mail = Mail(app)
 Compress(app)
 
@@ -81,8 +168,8 @@ csrf = CSRFProtect(app)
 cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 300})
 
 limiter = Limiter(get_remote_address, app=app,
-                  default_limits=["200 per day", "50 per hour"],
-                  storage_uri=os.getenv('REDIS_URL', 'memory://'))
+                  default_limits=["100 per day", "20 per hour"],
+                  storage_uri='memory://')
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -149,7 +236,7 @@ class Product(db.Model):
     image = db.Column(db.String(200))
     farmer_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     status = db.Column(db.String(20), default='pending')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=nairobi_now)
 
 class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -161,6 +248,14 @@ class Order(db.Model):
     payment_method = db.Column(db.String(50))
     transaction_id = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class ExecutiveUpdate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    attachment = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    published_by = db.Column(db.Integer, db.ForeignKey('user.id'))
 
 class PaymentTransaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -292,7 +387,6 @@ class OrderNote(db.Model):
     note = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# ---------- Private message for direct chat ----------
 class PrivateMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     from_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -331,6 +425,7 @@ def log_audit(user_id, action, ip):
 
 def notify_user(user_id, message):
     db.session.add(Notification(user_id=user_id, message=message))
+    db.session.commit()
 
 def notify_admins(message):
     admins = User.query.filter(User.role.in_(['admin', 'chief_admin']), User.suspended == False).all()
@@ -355,6 +450,7 @@ def record_wallet_credit(user_id, amount, reference, description):
         reference=reference,
         description=description
     ))
+    db.session.commit()
     return wallet
 
 def payment_methods():
@@ -395,7 +491,38 @@ def auto_verify_payment(payment_method, amount, order=None, purpose='order'):
         order.payment_method = payment_method
         order.transaction_id = transaction.transaction_code
         record_wallet_credit(order.buyer_id, amount, transaction.transaction_code, f'Payment received for order #{order.id}')
+    db.session.commit()
     return transaction
+
+def record_pending_payment(order, payment_method, reference):
+    transaction = PaymentTransaction(
+        order_id=order.id,
+        payment_method=payment_method,
+        amount=float(order.total_price or 0),
+        transaction_code=reference,
+        status='pending_verification'
+    )
+    db.session.add(transaction)
+    order.status = 'pending_payment_verification'
+    db.session.commit()
+    return transaction
+
+def latest_ssl_log_snapshot():
+    forwarded_proto = request.headers.get('X-Forwarded-Proto', '')
+    forwarded_ssl = request.headers.get('X-Forwarded-SSL', '')
+    logs = AuditLog.query.filter(
+        (AuditLog.action.ilike('%ssl%')) |
+        (AuditLog.action.ilike('%certificate%')) |
+        (AuditLog.action.ilike('%tls%')) |
+        (AuditLog.action.ilike('%deploy%'))
+    ).order_by(AuditLog.timestamp.desc()).limit(8).all()
+    return {
+        'request_secure': request.is_secure or forwarded_proto == 'https' or forwarded_ssl == 'on',
+        'forwarded_proto': forwarded_proto or 'not provided',
+        'host': request.host,
+        'site_url': app.config['SITE_URL'],
+        'logs': logs
+    }
 
 def filter_contact_info(text):
     text = re.sub(r'\b(\+?254|0)?[7-9][0-9]{8}\b', '[PHONE REMOVED]', text)
@@ -405,16 +532,32 @@ def filter_contact_info(text):
     return text
 
 def send_email(to, subject, body):
-    if not app.config['MAIL_USERNAME']:
-        print("Email not configured. Skipping.")
-        return False
-    try:
-        msg = Message(subject, recipients=[to], body=body)
-        mail.send(msg)
-        return True
-    except Exception as e:
-        print(f"Email error: {e}")
-        return False
+    if app.config['MAIL_USERNAME'] and app.config['MAIL_PASSWORD']:
+        try:
+            msg = Message(subject, recipients=[to], body=body)
+            mail.send(msg)
+            return True
+        except Exception as e:
+            print(f"SMTP email error: {e}")
+    sg_key = os.getenv('SENDGRID_API_KEY')
+    if sg_key:
+        try:
+            import sendgrid
+            from sendgrid.helpers.mail import Mail
+            sg = sendgrid.SendGridAPIClient(sg_key)
+            email_msg = Mail(
+                from_email=app.config['MAIL_DEFAULT_SENDER'],
+                to_emails=to,
+                subject=subject,
+                plain_text_content=body
+            )
+            response = sg.send(email_msg)
+            if response.status_code in [200, 202]:
+                return True
+        except Exception as e:
+            print(f"SendGrid exception: {e}")
+    print("Email not configured. Skipping.")
+    return False
 
 def send_sms(phone_number, message):
     print(f"SMS to {phone_number}: {message}")
@@ -433,28 +576,32 @@ def confirm_reset_token(token, expiration=3600):
     return email
 
 def ensure_runtime_tables():
+    db.create_all()
+    
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS wallet (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL UNIQUE,
             balance FLOAT DEFAULT 0.0,
-            updated_at DATETIME
+            updated_at DATETIME,
+            FOREIGN KEY (user_id) REFERENCES user (id)
         )
     """))
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS wallet_transaction (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             amount FLOAT NOT NULL,
             transaction_type VARCHAR(30) DEFAULT 'credit',
             reference VARCHAR(120),
             description VARCHAR(240),
-            created_at DATETIME
+            created_at DATETIME,
+            FOREIGN KEY (user_id) REFERENCES user (id)
         )
     """))
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS marketplace_connection (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id INTEGER NOT NULL,
             buyer_id INTEGER NOT NULL,
             seller_id INTEGER NOT NULL,
@@ -462,12 +609,16 @@ def ensure_runtime_tables():
             status VARCHAR(30) DEFAULT 'awaiting_admin',
             notes TEXT,
             created_at DATETIME,
-            approved_at DATETIME
+            approved_at DATETIME,
+            FOREIGN KEY (order_id) REFERENCES "order" (id),
+            FOREIGN KEY (buyer_id) REFERENCES user (id),
+            FOREIGN KEY (seller_id) REFERENCES user (id),
+            FOREIGN KEY (admin_id) REFERENCES user (id)
         )
     """))
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS cart (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL UNIQUE,
             created_at DATETIME,
             FOREIGN KEY (user_id) REFERENCES user (id)
@@ -475,7 +626,7 @@ def ensure_runtime_tables():
     """))
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS cart_item (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             cart_id INTEGER NOT NULL,
             product_id INTEGER NOT NULL,
             quantity INTEGER DEFAULT 1,
@@ -485,7 +636,7 @@ def ensure_runtime_tables():
     """))
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS contact_request (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             from_user_id INTEGER NOT NULL,
             to_user_id INTEGER NOT NULL,
             order_id INTEGER,
@@ -500,7 +651,7 @@ def ensure_runtime_tables():
     """))
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS inquiry (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             buyer_id INTEGER NOT NULL,
             product_id INTEGER NOT NULL,
             message TEXT NOT NULL,
@@ -512,7 +663,7 @@ def ensure_runtime_tables():
     """))
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS admin_reply (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             inquiry_id INTEGER NOT NULL,
             admin_id INTEGER NOT NULL,
             reply TEXT NOT NULL,
@@ -523,7 +674,7 @@ def ensure_runtime_tables():
     """))
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS order_note (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id INTEGER NOT NULL,
             admin_id INTEGER,
             note TEXT NOT NULL,
@@ -534,7 +685,7 @@ def ensure_runtime_tables():
     """))
     db.session.execute(text("""
         CREATE TABLE IF NOT EXISTS private_message (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             from_user_id INTEGER NOT NULL,
             to_user_id INTEGER NOT NULL,
             message TEXT NOT NULL,
@@ -595,6 +746,7 @@ def migrate_existing_database():
     add_column_if_missing('payment_transaction', 'transaction_code', 'transaction_code VARCHAR(100)')
     add_column_if_missing('payment_transaction', 'status', "status VARCHAR(20) DEFAULT 'pending'")
     add_column_if_missing('payment_transaction', 'timestamp', 'timestamp DATETIME')
+    add_column_if_missing('executive_update', 'attachment', 'attachment VARCHAR(200)')
     add_column_if_missing('disease_detection_log', 'crop_type', 'crop_type VARCHAR(50)')
     db.session.commit()
 
@@ -603,7 +755,8 @@ def generate_captcha():
     op = random.choice(ops)
     a = random.randint(1, 10)
     b = random.randint(1, 10)
-    if op == '-': a = max(a, b)
+    if op == '-': 
+        a = max(a, b)
     text = f"{a} {op} {b}"
     answer = eval(text)
     c = CaptchaModel(captcha_text=str(answer))
@@ -669,6 +822,8 @@ def admin_dashboard_metrics():
     role_counts = {str(role or 'unknown'): count for role, count in db.session.query(User.role, func.count(User.id)).group_by(User.role).all()}
     order_statuses = {str(status or 'unknown'): count for status, count in db.session.query(Order.status, func.count(Order.id)).group_by(Order.status).all()}
     recent_logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(12).all()
+    executive_updates = ExecutiveUpdate.query.order_by(ExecutiveUpdate.created_at.desc()).limit(8).all()
+    pending_payments = PaymentTransaction.query.filter_by(status='pending_verification').order_by(PaymentTransaction.timestamp.desc()).limit(12).all()
     recent_users = User.query.order_by(User.created_at.desc()).limit(10).all()
     latest_products = Product.query.order_by(Product.created_at.desc()).limit(10).all()
     admin_users = User.query.filter(User.role.in_(['admin', 'chief_admin'])).order_by(User.role.desc(), User.username).all()
@@ -708,6 +863,9 @@ def admin_dashboard_metrics():
         'order_statuses': order_statuses,
         'top_products': [{'name': name, 'units': int(units or 0)} for name, units in top_products],
         'recent_logs': recent_logs,
+        'executive_updates': executive_updates,
+        'ssl_status': latest_ssl_log_snapshot(),
+        'pending_payments': pending_payments,
         'recent_users': recent_users,
         'admin_users': admin_users,
         'latest_products': latest_products,
@@ -803,7 +961,7 @@ def terms():
     return render_template('terms.html')
 
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("10 per minute")
+@limiter.limit("5 per minute")
 def login_page():
     if request.method == 'POST':
         username = request.form['username']
@@ -825,6 +983,23 @@ def login_page():
             return redirect(next_page or url_for('marketplace'))
         flash('Invalid credentials.', 'error')
     return render_template('login.html')
+
+@app.route('/verify-2fa', methods=['GET', 'POST'])
+def verify_2fa_page():
+    if '2fa_user_id' not in session:
+        return redirect(url_for('login_page'))
+    user = db.session.get(User, session['2fa_user_id'])
+    if not user:
+        return redirect(url_for('login_page'))
+    if request.method == 'POST':
+        token = request.form.get('token')
+        if token and pyotp.TOTP(user.two_factor_secret).verify(token):
+            login_user(user)
+            session.pop('2fa_user_id', None)
+            flash('2FA verified successfully.', 'success')
+            return redirect(url_for('dashboard'))
+        flash('Invalid 2FA token.', 'error')
+    return render_template('verify_2fa.html')
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
@@ -959,11 +1134,19 @@ def upload_product():
         image = None
         if 'image' in request.files:
             file = request.files['image']
-            if file.filename:
-                filename = secure_filename(file.filename)
-                os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                image = filename
+            if file and file.filename:
+                if cloudinary:
+                    try:
+                        upload_result = cloudinary.uploader.upload(file, folder='market2farm/products')
+                        image = upload_result['secure_url']
+                    except Exception as e:
+                        flash(f'Image upload failed: {str(e)}', 'error')
+                        return redirect(url_for('upload_product'))
+                else:
+                    filename = secure_filename(file.filename)
+                    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                    image = url_for('uploaded_file', filename=filename, _external=True)
         product = Product(name=name, description=desc, price=price, category=category,
                           organic=organic, image=image, farmer_id=current_user.id)
         db.session.add(product)
@@ -988,6 +1171,7 @@ def approve_product(id):
         db.session.commit()
         cache.clear()
         log_audit(current_user.id, f'Approved product {id}', request.remote_addr)
+        flash('Product approved.', 'success')
     return redirect(url_for('admin_products'))
 
 @app.route('/admin/reject/<int:id>', methods=['POST'])
@@ -1213,8 +1397,10 @@ def climate_api():
         data = resp.json()
         today = data['daily']
         rec = []
-        if today['precipitation_sum'][0] > 5: rec.append("High rain expected – protect young crops with mulch or covers.")
-        if today['temperature_2m_max'][0] > 30: rec.append("Heat wave expected – irrigate early morning or evening.")
+        if today['precipitation_sum'][0] > 5: 
+            rec.append("High rain expected – protect young crops with mulch or covers.")
+        if today['temperature_2m_max'][0] > 30: 
+            rec.append("Heat wave expected – irrigate early morning or evening.")
         return jsonify({'temperature_max': today['temperature_2m_max'][0], 'precipitation': today['precipitation_sum'][0], 'recommendations': rec})
     except Exception as e:
         return jsonify({'error':'Could not fetch climate data','details':str(e)}), 500
@@ -1250,53 +1436,121 @@ def payment_initiate():
     order = db.session.get(Order, int(data.get('order_id',0)))
     method = data.get('payment_method','mpesa')
     valid = {m['id'] for m in payment_methods()}
-    if method not in valid: return jsonify({'error':'Invalid payment method'}),400
-    if not order or order.buyer_id != current_user.id: return jsonify({'error':'Invalid order'}),400
+    if method not in valid: 
+        return jsonify({'error':'Invalid payment method'}),400
+    if not order or order.buyer_id != current_user.id: 
+        return jsonify({'error':'Invalid order'}),400
+
+    if method == 'stripe_card' and stripe:
+        return jsonify({'redirect': True, 'action': '/api/create-checkout-session', 'order_id': order.id})
+
     if method in ['mpesa','airtel_money']:
-        phone = data.get('phone')
-        if not phone: return jsonify({'error':'Phone number required for mobile money payment'}),400
-        transaction = auto_verify_payment(method, order.total_price, order=order, purpose='order')
-        conn = MarketplaceConnection.query.filter_by(order_id=order.id).first()
-        if conn: conn.status = 'awaiting_admin'
-        product = db.session.get(Product, order.product_id)
-        notify_user(current_user.id, f'Payment for order #{order.id} was verified. Admin will connect you with the seller.')
-        notify_admins(f'Payment verified for order #{order.id}. Approve the buyer-seller connection for {product.name if product else "product"}.')
+        phone = re.sub(r'\D', '', data.get('phone', ''))
+        if not re.fullmatch(r'(2547|2541|07|01)\d{8}', phone):
+            return jsonify({'error':'Enter a valid M-Pesa/Airtel phone number. Payment will only be verified by admin after checking provider records.'}),400
+        reference = f'{method.upper()}-{phone[-4:]}-{datetime.utcnow().strftime("%Y%m%d%H%M%S")}'
+        transaction = record_pending_payment(order, method, reference)
+        notify_user(current_user.id, f'Payment request for order #{order.id} was received. Admin will verify it before matching fulfillment.')
+        notify_admins(f'Payment verification needed for order #{order.id} using {method}. Reference: {reference}.')
         db.session.commit()
-        log_audit(current_user.id, f'Paid order {order.id} using {method}', request.remote_addr)
+        log_audit(current_user.id, f'Submitted pending payment for order {order.id} using {method}', request.remote_addr)
         wallet = get_wallet(current_user.id)
-        return jsonify({'success':True, 'message':f'Payment successful through {method.replace("_"," ").title()}. Admin connection is pending.', 'transaction_id':transaction.id, 'transaction_code':transaction.transaction_code, 'display_amount':display_amount(order.total_price, method), 'wallet_balance':wallet.balance, 'order_status':order.status})
-    elif method in ['bank_transfer','paypal','stripe_card','binance_pay']:
+        return jsonify({'success':True, 'message':f'Payment request submitted through {method.replace("_"," ").title()}. It is pending admin verification.', 'transaction_id':transaction.id, 'transaction_code':transaction.transaction_code, 'display_amount':display_amount(order.total_price, method), 'wallet_balance':wallet.balance, 'order_status':order.status})
+    elif method in ['bank_transfer','paypal','binance_pay']:
         ref = data.get('reference')
         if not ref:
             instructions = {'bank_transfer':'Please transfer to: Bank: KCB, Account: 1234567890, Name: Market2Farm Ltd. Then enter the transaction reference.',
                             'paypal':'Send payment to paypal@market2farm.com. Then enter the PayPal transaction ID.',
-                            'stripe_card':'You will be redirected to Stripe. After payment, enter the payment intent ID.',
                             'binance_pay':'Send USDT to wallet address: 0x123... Then enter the transaction hash.'}
             return jsonify({'requires_manual':True, 'instructions':instructions.get(method,'Please complete payment and enter reference'), 'message':'Manual payment required. Please provide transaction reference.'}),202
-        transaction = PaymentTransaction(order_id=order.id, payment_method=method, amount=order.total_price, transaction_code=ref, status='pending_verification')
-        db.session.add(transaction)
-        order.status = 'pending_verification'
+        ref = filter_contact_info(ref.strip())[:100]
+        transaction = record_pending_payment(order, method, ref)
         db.session.commit()
         log_audit(current_user.id, f'Initiated manual payment for order {order.id} using {method}', request.remote_addr)
         notify_admins(f'Manual payment for order #{order.id} using {method}. Reference: {ref}. Please verify.')
         return jsonify({'success':True, 'message':f'Payment reference recorded. Admin will verify and complete your order.', 'transaction_id':transaction.id, 'transaction_code':ref, 'display_amount':display_amount(order.total_price, method), 'wallet_balance':get_wallet(current_user.id).balance, 'order_status':order.status})
-    else: return jsonify({'error':'Unsupported payment method'}),400
+    else: 
+        return jsonify({'error':'Unsupported payment method'}),400
+
+# ---------- Stripe Checkout Endpoints ----------
+@app.route('/api/create-checkout-session', methods=['POST'])
+@login_required
+def create_checkout_session():
+    if not stripe:
+        return jsonify({'error': 'Stripe is not configured. Please contact administrator.'}), 500
+    
+    data = request.json or {}
+    order_id = data.get('order_id')
+    order = Order.query.get(order_id)
+    if not order or order.buyer_id != current_user.id:
+        return jsonify({'error': 'Invalid order'}), 400
+
+    amount_in_cents = int(order.total_price * 100)
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'kes',
+                    'unit_amount': amount_in_cents,
+                    'product_data': {
+                        'name': f'Market2Farm Order #{order.id}',
+                        'description': f'Product ID: {order.product_id}',
+                    },
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=url_for('payment_success', order_id=order.id, _external=True),
+            cancel_url=url_for('payment_cancel', order_id=order.id, _external=True),
+            metadata={'order_id': order.id}
+        )
+        return jsonify({'sessionId': checkout_session.id, 'url': checkout_session.url})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/payment/success/<int:order_id>')
+@login_required
+def payment_success(order_id):
+    order = Order.query.get(order_id)
+    if order and order.buyer_id == current_user.id:
+        order.status = 'paid_awaiting_admin_connection'
+        transaction = PaymentTransaction(
+            order_id=order.id,
+            payment_method='stripe_card',
+            amount=order.total_price,
+            transaction_code=f'STRIPE-{order.id}-{datetime.utcnow().timestamp()}',
+            status='completed'
+        )
+        db.session.add(transaction)
+        record_wallet_credit(order.buyer_id, order.total_price, transaction.transaction_code, f'Stripe payment for order #{order.id}')
+        db.session.commit()
+        flash('Payment successful! Admin will now process your order.', 'success')
+    else:
+        flash('Order not found or not yours.', 'error')
+    return redirect(url_for('my_orders'))
+
+@app.route('/payment/cancel/<int:order_id>')
+@login_required
+def payment_cancel(order_id):
+    flash('Payment was cancelled or failed. You can try again.', 'error')
+    order = Order.query.get(order_id)
+    product_id = order.product_id if order else 1
+    return redirect(url_for('product_detail', id=product_id))
 
 @app.route('/api/payment/mpesa/initiate', methods=['POST'])
 @login_required
 def mpesa_initiate():
     order_id = request.json.get('order_id')
     order = Order.query.get(order_id)
-    if not order or order.buyer_id != current_user.id: return jsonify({'error':'Invalid order'}),400
-    transaction = PaymentTransaction(order_id=order.id, payment_method='mpesa', amount=order.total_price, transaction_code=f'MPESA{datetime.utcnow().strftime("%Y%m%d%H%M%S")}')
-    db.session.add(transaction)
+    if not order or order.buyer_id != current_user.id: 
+        return jsonify({'error':'Invalid order'}),400
+    reference = f'MPESA-{datetime.utcnow().strftime("%Y%m%d%H%M%S")}'
+    transaction = record_pending_payment(order, 'mpesa', reference)
     db.session.commit()
-    transaction.status = 'completed'
-    order.status = 'paid'
-    order.transaction_id = transaction.transaction_code
-    db.session.commit()
-    log_audit(current_user.id, f'Paid order {order.id} via M-Pesa', request.remote_addr)
-    return jsonify({'message':'STK Push sent. Payment completed (demo).', 'transaction_id':transaction.id})
+    log_audit(current_user.id, f'Submitted M-Pesa payment request for order {order.id}', request.remote_addr)
+    notify_admins(f'M-Pesa payment verification needed for order #{order.id}. Reference: {reference}.')
+    return jsonify({'message':'Payment request received. Admin must verify provider records before fulfillment.', 'transaction_id':transaction.id})
 
 def get_or_create_cart(user_id):
     cart = Cart.query.filter_by(user_id=user_id).first()
@@ -1321,12 +1575,16 @@ def view_cart():
 def add_to_cart():
     data = request.json
     product = db.session.get(Product, int(data.get('product_id',0)))
-    if not product or product.status != 'approved': return jsonify({'error':'Product not available'}),400
+    if not product or product.status != 'approved': 
+        return jsonify({'error':'Product not available'}),400
     qty = max(int(data.get('quantity',1)),1)
     cart = get_or_create_cart(current_user.id)
     item = CartItem.query.filter_by(cart_id=cart.id, product_id=product.id).first()
-    if item: item.quantity += qty
-    else: item = CartItem(cart_id=cart.id, product_id=product.id, quantity=qty); db.session.add(item)
+    if item: 
+        item.quantity += qty
+    else: 
+        item = CartItem(cart_id=cart.id, product_id=product.id, quantity=qty)
+        db.session.add(item)
     db.session.commit()
     return jsonify({'success':True, 'message':'Added to cart'})
 
@@ -1336,10 +1594,13 @@ def update_cart():
     data = request.json
     cart = get_or_create_cart(current_user.id)
     item = CartItem.query.filter_by(id=data.get('item_id'), cart_id=cart.id).first()
-    if not item: return jsonify({'error':'Item not found'}),404
+    if not item: 
+        return jsonify({'error':'Item not found'}),404
     qty = max(int(data.get('quantity',0)),0)
-    if qty == 0: db.session.delete(item)
-    else: item.quantity = qty
+    if qty == 0: 
+        db.session.delete(item)
+    else: 
+        item.quantity = qty
     db.session.commit()
     return jsonify({'success':True})
 
@@ -1357,9 +1618,11 @@ def remove_cart_item():
 def secure_checkout():
     cart = get_or_create_cart(current_user.id)
     items = db.session.query(CartItem,Product).join(Product, CartItem.product_id == Product.id).filter(CartItem.cart_id == cart.id).all()
-    if not items: return jsonify({'error':'Cart is empty'}),400
+    if not items: 
+        return jsonify({'error':'Cart is empty'}),400
     total = sum(item[0].quantity * item[1].price for item in items)
-    if total <= 0: return jsonify({'error':'Invalid total amount'}),400
+    if total <= 0: 
+        return jsonify({'error':'Invalid total amount'}),400
     orders = []
     for cart_item, product in items:
         order = Order(buyer_id=current_user.id, product_id=product.id, quantity=cart_item.quantity, total_price=float(product.price)*cart_item.quantity, status='pending_payment')
@@ -1380,7 +1643,8 @@ def my_orders():
 @app.route('/seller/orders')
 @login_required
 def seller_orders():
-    if current_user.role not in ['farmer','admin','chief_admin']: abort(403)
+    if current_user.role not in ['farmer','admin','chief_admin']: 
+        abort(403)
     product_ids = [p.id for p in Product.query.filter_by(farmer_id=current_user.id).all()]
     orders = Order.query.filter(Order.product_id.in_(product_ids)).order_by(Order.created_at.desc()).all()
     return render_template('seller_orders.html', orders=orders)
@@ -1395,16 +1659,20 @@ def wallet_info():
 @login_required
 def subscribe():
     plan = SubscriptionPlan.query.filter_by(is_active=True).first()
-    if not plan: flash('No active subscription plan.', 'info'); return redirect(url_for('dashboard'))
+    if not plan: 
+        flash('No active subscription plan.', 'info')
+        return redirect(url_for('dashboard'))
     return render_template('subscribe.html', plan=plan)
 
 @app.route('/api/subscription/activate', methods=['POST'])
 @login_required
 def activate_subscription():
     plan = SubscriptionPlan.query.filter_by(is_active=True).first()
-    if not plan: return jsonify({'error':'No active plan'}),400
+    if not plan: 
+        return jsonify({'error':'No active plan'}),400
     method = (request.json or {}).get('payment_method','mpesa') if request.is_json else request.form.get('payment_method','mpesa')
-    if method not in {m['id'] for m in payment_methods()}: return jsonify({'error':'Invalid payment method'}),400
+    if method not in {m['id'] for m in payment_methods()}: 
+        return jsonify({'error':'Invalid payment method'}),400
     transaction = auto_verify_payment(method, plan.price_monthly, purpose='subscription')
     record_wallet_credit(current_user.id, plan.price_monthly, transaction.transaction_code, f'Subscription payment for {plan.name}')
     current_user.subscription_active = True
@@ -1422,8 +1690,11 @@ def toggle_subscription():
         plan.is_active = False
         flash('Subscriptions disabled.', 'info')
     else:
-        if plan: plan.is_active = True
-        else: plan = SubscriptionPlan(name='Premium', price_monthly=500, price_yearly=5000, is_active=True); db.session.add(plan)
+        if plan: 
+            plan.is_active = True
+        else: 
+            plan = SubscriptionPlan(name='Premium', price_monthly=500, price_yearly=5000, is_active=True)
+            db.session.add(plan)
         db.session.commit()
         flash('Subscriptions enabled.', 'success')
     return redirect(url_for('chief_dashboard'))
@@ -1435,7 +1706,8 @@ def set_subscription_plan():
     monthly = float(request.form.get('price_monthly',0) or 0)
     yearly = float(request.form.get('price_yearly', monthly*10) or 0)
     plan = SubscriptionPlan.query.first()
-    if not plan: plan = SubscriptionPlan()
+    if not plan: 
+        plan = SubscriptionPlan()
     plan.name = name
     plan.price_monthly = monthly
     plan.price_yearly = yearly
@@ -1443,6 +1715,57 @@ def set_subscription_plan():
     db.session.commit()
     log_audit(current_user.id, f'Set subscription plan {name} KES {monthly}/month', request.remote_addr)
     flash('Subscription plan updated and published to users.', 'success')
+    return redirect(url_for('chief_dashboard'))
+
+@app.route('/chief/admin/updates/create', methods=['POST'])
+@chief_required
+def chief_create_update():
+    title = request.form.get('title', '').strip()
+    content = request.form.get('content', '').strip()
+    if not title or not content:
+        flash('Executive update title and content are required.', 'error')
+        return redirect(url_for('chief_dashboard'))
+    attachment = None
+    file = request.files.get('attachment')
+    if file and file.filename:
+        filename = secure_filename(f"executive_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        attachment = filename
+    update = ExecutiveUpdate(title=title, content=content, attachment=attachment, published_by=current_user.id)
+    db.session.add(update)
+    db.session.commit()
+    log_audit(current_user.id, f'Published executive update: {title}', request.remote_addr)
+    flash('Executive update published to the main portal.', 'success')
+    return redirect(url_for('chief_dashboard'))
+
+@app.route('/chief/admin/updates/<int:update_id>/delete', methods=['POST'])
+@chief_required
+def chief_delete_update(update_id):
+    update = db.session.get(ExecutiveUpdate, update_id)
+    if not update:
+        flash('Executive update not found.', 'error')
+        return redirect(url_for('chief_dashboard'))
+    db.session.delete(update)
+    db.session.commit()
+    log_audit(current_user.id, f'Deleted executive update {update_id}', request.remote_addr)
+    flash('Executive update removed.', 'success')
+    return redirect(url_for('chief_dashboard'))
+
+@app.route('/executive-updates/<int:update_id>/attachment')
+@login_required
+def executive_update_attachment(update_id):
+    update = db.session.get(ExecutiveUpdate, update_id)
+    if not update or not update.attachment:
+        abort(404)
+    return send_from_directory(app.config['UPLOAD_FOLDER'], update.attachment, as_attachment=True)
+
+@app.route('/chief/admin/security/ssl/review', methods=['POST'])
+@chief_required
+def chief_review_ssl():
+    status = 'secure' if latest_ssl_log_snapshot()['request_secure'] else 'not secure'
+    log_audit(current_user.id, f'Reviewed SSL certificate deployment and web server logs: request {status}', request.remote_addr)
+    flash('SSL certificate and web server log review recorded.', 'success')
     return redirect(url_for('chief_dashboard'))
 
 @app.route('/chief-admin')
@@ -1537,7 +1860,6 @@ def chief_change_role(id):
         return jsonify({'error':'Invalid role'}),400
     return jsonify({'error':'User not found'}),404
 
-# ---------- CHIEF ADMIN DELETE USER ----------
 @app.route('/chief/user/<int:id>/delete', methods=['POST'])
 @chief_required
 def chief_delete_user(id):
@@ -1569,8 +1891,12 @@ def chief_create_admin():
     email = request.form.get('email','').strip().lower()
     phone = request.form.get('phone','').strip()
     password = request.form.get('password','Admin@2025')
-    if not username or not email: flash('Username and email are required.', 'error'); return redirect(url_for('chief_dashboard'))
-    if User.query.filter((User.username == username) | (User.email == email)).first(): flash('User already exists.', 'error'); return redirect(url_for('chief_dashboard'))
+    if not username or not email: 
+        flash('Username and email are required.', 'error')
+        return redirect(url_for('chief_dashboard'))
+    if User.query.filter((User.username == username) | (User.email == email)).first(): 
+        flash('User already exists.', 'error')
+        return redirect(url_for('chief_dashboard'))
     admin = User(username=username, email=email, phone=phone, password_hash=generate_password_hash(password), role='admin', verified=True, email_verified=True)
     db.session.add(admin)
     db.session.commit()
@@ -1582,7 +1908,9 @@ def chief_create_admin():
 @chief_required
 def chief_remove_admin(id):
     user = db.session.get(User, id)
-    if not user or user.role != 'admin': flash('Only regular admins can be removed here.', 'error'); return redirect(url_for('chief_dashboard'))
+    if not user or user.role != 'admin': 
+        flash('Only regular admins can be removed here.', 'error')
+        return redirect(url_for('chief_dashboard'))
     user.role = 'buyer'
     user.suspended = True
     db.session.commit()
@@ -1594,7 +1922,9 @@ def chief_remove_admin(id):
 @chief_required
 def chief_verify_user(id):
     user = db.session.get(User, id)
-    if not user: flash('User not found.', 'error'); return redirect(url_for('chief_dashboard'))
+    if not user: 
+        flash('User not found.', 'error')
+        return redirect(url_for('chief_dashboard'))
     user.verified = True
     user.email_verified = True
     db.session.commit()
@@ -1607,52 +1937,106 @@ def chief_verify_user(id):
 def approve_connection(order_id):
     order = db.session.get(Order, order_id)
     conn = MarketplaceConnection.query.filter_by(order_id=order_id).first()
-    if not order or not conn: flash('Connection request not found.', 'error'); return redirect(url_for('admin_dashboard'))
-    conn.status = 'approved'
+    if not order or not conn: 
+        flash('Connection request not found.', 'error')
+        return redirect(url_for('admin_dashboard'))
+    if order.status not in ['paid_awaiting_admin_connection', 'admin_matched']:
+        flash('Verify payment before approving fulfillment.', 'error')
+        return redirect(url_for('admin_dashboard'))
+    conn.status = 'admin_managed'
     conn.admin_id = current_user.id
     conn.notes = request.form.get('notes','')
     conn.approved_at = datetime.utcnow()
-    order.status = 'admin_connected'
-    product = db.session.get(Product, order.product_id)
-    seller = db.session.get(User, conn.seller_id)
-    buyer = db.session.get(User, conn.buyer_id)
-    notify_user(conn.buyer_id, f'Admin approved your connection to {seller.username if seller else "the seller"} for order #{order.id}.')
-    notify_user(conn.seller_id, f'Admin approved buyer {buyer.username if buyer else "buyer"} for your product {product.name if product else ""}.')
+    order.status = 'admin_matched'
     db.session.commit()
-    log_audit(current_user.id, f'Approved connection for order {order_id}', request.remote_addr)
-    flash('Buyer and seller are now connected through admin approval.', 'success')
+    notify_user(conn.buyer_id, f'Market2Farm admin approved fulfillment for order #{order.id}. The marketplace team will coordinate delivery.')
+    notify_user(conn.seller_id, f'Market2Farm admin selected your stock for order #{order.id}. Coordinate only through the admin/system.')
+    db.session.commit()
+    log_audit(current_user.id, f'Approved admin-managed fulfillment for order {order_id}', request.remote_addr)
+    flash('Admin-managed fulfillment approved. Buyer and seller identities remain hidden.', 'success')
     return redirect(url_for('admin_dashboard'))
 
-# ---------- ADMIN CONNECT BUYER & SELLER WITH NOTIFICATIONS ----------
+@app.route('/admin/payment/<int:transaction_id>/verify', methods=['POST'])
+@admin_required
+def admin_verify_payment(transaction_id):
+    transaction = db.session.get(PaymentTransaction, transaction_id)
+    if not transaction:
+        flash('Payment transaction not found.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
+    order = db.session.get(Order, transaction.order_id)
+    if not order:
+        flash('Order not found for this payment.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
+    if transaction.status != 'pending_verification':
+        flash('This payment has already been processed.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
+    decision = request.form.get('decision', 'approve')
+    if decision == 'reject':
+        transaction.status = 'rejected'
+        order.status = 'payment_rejected'
+        notify_user(order.buyer_id, f'Payment for order #{order.id} could not be verified. Please contact Market2Farm admin.')
+        db.session.commit()
+        log_audit(current_user.id, f'Rejected payment transaction {transaction.id} for order {order.id}', request.remote_addr)
+        flash('Payment rejected.', 'success')
+        return redirect(request.referrer or url_for('admin_dashboard'))
+    transaction.status = 'completed'
+    order.status = 'paid_awaiting_admin_connection'
+    order.payment_method = transaction.payment_method
+    order.transaction_id = transaction.transaction_code
+    conn = MarketplaceConnection.query.filter_by(order_id=order.id).first()
+    if conn:
+        conn.status = 'awaiting_admin'
+    record_wallet_credit(order.buyer_id, transaction.amount, transaction.transaction_code, f'Verified payment for order #{order.id}')
+    notify_user(order.buyer_id, f'Payment for order #{order.id} has been verified. Market2Farm admin will match fulfillment.')
+    notify_admins(f'Order #{order.id} payment verified. Select/admin-manage the best fulfillment match.')
+    db.session.commit()
+    log_audit(current_user.id, f'Verified payment transaction {transaction.id} for order {order.id}', request.remote_addr)
+    flash('Payment verified. Order moved to admin-managed matching.', 'success')
+    return redirect(request.referrer or url_for('admin_dashboard'))
+
 @app.route('/admin/connect/<int:order_id>', methods=['POST'])
 @admin_required
 def admin_connect_buyer_seller(order_id):
     order = db.session.get(Order, order_id)
-    if not order: flash('Order not found.', 'error'); return redirect(request.referrer or url_for('admin_dashboard'))
+    if not order: 
+        flash('Order not found.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
     conn = MarketplaceConnection.query.filter_by(order_id=order_id).first()
-    if not conn: flash('Connection record not found.', 'error'); return redirect(request.referrer or url_for('admin_dashboard'))
-    conn.status = 'connected'
+    if not conn: 
+        flash('Connection record not found.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
+    if order.status not in ['paid_awaiting_admin_connection', 'admin_matched']:
+        flash('Verify payment before approving fulfillment.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
+    conn.status = 'admin_managed'
     conn.admin_id = current_user.id
     conn.approved_at = datetime.utcnow()
-    order.status = 'connected'
+    order.status = 'admin_matched'
     db.session.commit()
     buyer = db.session.get(User, order.buyer_id)
     seller = db.session.get(User, order.product.farmer_id)
-    msg = f'Admin has connected you with the seller for order #{order.id}. You can now communicate via platform.'
+    msg = f'Market2Farm admin selected fulfillment for order #{order.id}. All communication remains through the admin/system.'
     notify_user(buyer.id, msg)
-    notify_user(seller.id, f'Admin has connected you with the buyer for order #{order.id}.')
-    if buyer.email: send_email(buyer.email, f'Order #{order.id} Connection Approved', msg)
-    if seller and seller.email: send_email(seller.email, f'Order #{order.id} Connection Approved', f'You have been connected with buyer {buyer.username}.')
-    if buyer.phone: send_sms(buyer.phone, f'Market2Farm: Order #{order.id} connection approved. Check your account.')
-    if seller and seller.phone: send_sms(seller.phone, f'Market2Farm: Order #{order.id} connection approved.')
-    flash('Buyer and seller have been connected and notified via platform, email, and SMS.', 'success')
+    if seller:
+        notify_user(seller.id, f'Market2Farm admin selected your stock for order #{order.id}. Do not contact the buyer directly.')
+    if buyer.email: 
+        send_email(buyer.email, f'Order #{order.id} Fulfillment Update', msg)
+    if seller and seller.email: 
+        send_email(seller.email, f'Order #{order.id} Fulfillment Update', f'Market2Farm admin selected your stock. Coordinate only through admin/system.')
+    if buyer.phone: 
+        send_sms(buyer.phone, f'Market2Farm: Order #{order.id} is being coordinated by admin.')
+    if seller and seller.phone: 
+        send_sms(seller.phone, f'Market2Farm: Order #{order.id} selected. Coordinate through admin only.')
+    flash('Admin-managed fulfillment started. Buyer and seller identities remain hidden.', 'success')
     return redirect(request.referrer or url_for('admin_dashboard'))
 
 @app.route('/admin/product/<int:id>/price', methods=['POST'])
 @admin_required
 def update_product_price(id):
     product = db.session.get(Product, id)
-    if not product: flash('Product not found.', 'error'); return redirect(url_for('admin_dashboard'))
+    if not product: 
+        flash('Product not found.', 'error')
+        return redirect(url_for('admin_dashboard'))
     product.price = float(request.form.get('price', product.price) or product.price)
     product.description = request.form.get('description', product.description)
     db.session.commit()
@@ -1667,35 +2051,42 @@ def chief_recent_audit():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(20).all()
     return jsonify([{'action':l.action, 'ip':l.ip_address, 'timestamp':l.timestamp.strftime('%Y-%m-%d %H:%M') if l.timestamp else 'unknown'} for l in logs])
 
-# ---------- ADMIN MESSAGE TO SPECIFIC USER ----------
 @app.route('/admin/user/<int:user_id>/message', methods=['GET','POST'])
 @admin_required
 def admin_send_user_message(user_id):
     target = db.session.get(User, user_id)
-    if not target: flash('User not found.', 'error'); return redirect(url_for('admin_dashboard'))
+    if not target: 
+        flash('User not found.', 'error')
+        return redirect(url_for('admin_dashboard'))
     if request.method == 'POST':
         subject = request.form.get('subject', 'Message from Market2Farm Admin')
         body = request.form.get('message','').strip()
         send_email_notif = request.form.get('send_email') == 'on'
         send_sms_notif = request.form.get('send_sms') == 'on'
-        if not body: flash('Message cannot be empty.', 'error'); return redirect(url_for('admin_send_user_message', user_id=user_id))
+        if not body: 
+            flash('Message cannot be empty.', 'error')
+            return redirect(url_for('admin_send_user_message', user_id=user_id))
         notify_user(target.id, f'Admin message: {subject}\n\n{body}')
-        if send_email_notif and target.email: send_email(target.email, f'Market2Farm: {subject}', body)
-        if send_sms_notif and target.phone: send_sms(target.phone, f'Market2Farm: {subject[:30]} - {body[:100]}')
+        if send_email_notif and target.email: 
+            send_email(target.email, f'Market2Farm: {subject}', body)
+        if send_sms_notif and target.phone: 
+            send_sms(target.phone, f'Market2Farm: {subject[:30]} - {body[:100]}')
         log_audit(current_user.id, f'Sent message to user {target.id}', request.remote_addr)
         flash('Message sent successfully.', 'success')
         return redirect(url_for('admin_dashboard'))
     return render_template('admin/send_user_message.html', user=target)
 
-# ---------- INQUIRY ROUTES ----------
 @app.route('/product/<int:product_id>/inquiry', methods=['GET','POST'])
 @login_required
 def product_inquiry(product_id):
     product = db.session.get(Product, product_id)
-    if not product or product.status != 'approved': abort(404)
+    if not product or product.status != 'approved': 
+        abort(404)
     if request.method == 'POST':
         msg = request.form.get('message','').strip()
-        if not msg: flash('Please enter a message.', 'error'); return redirect(url_for('product_detail', id=product_id))
+        if not msg: 
+            flash('Please enter a message.', 'error')
+            return redirect(url_for('product_detail', id=product_id))
         filtered = filter_contact_info(msg)
         inquiry = Inquiry(buyer_id=current_user.id, product_id=product_id, message=filtered)
         db.session.add(inquiry)
@@ -1721,10 +2112,13 @@ def admin_inquiries():
 @admin_required
 def admin_inquiry_chat(inquiry_id):
     inquiry = db.session.get(Inquiry, inquiry_id)
-    if not inquiry: abort(404)
+    if not inquiry: 
+        abort(404)
     if request.method == 'POST':
         reply_text = request.form.get('reply','').strip()
-        if not reply_text: flash('Reply cannot be empty.', 'error'); return redirect(url_for('admin_inquiry_chat', inquiry_id=inquiry_id))
+        if not reply_text: 
+            flash('Reply cannot be empty.', 'error')
+            return redirect(url_for('admin_inquiry_chat', inquiry_id=inquiry_id))
         filtered = filter_contact_info(reply_text)
         reply = AdminReply(inquiry_id=inquiry.id, admin_id=current_user.id, reply=filtered)
         db.session.add(reply)
@@ -1732,8 +2126,10 @@ def admin_inquiry_chat(inquiry_id):
         db.session.commit()
         buyer = inquiry.buyer
         notify_user(buyer.id, f'Admin replied to your inquiry about "{inquiry.product.name}".')
-        if buyer.email: send_email(buyer.email, f'Market2Farm: Reply to your inquiry', f'Admin said: {filtered}\n\nView your inquiries: {url_for("my_inquiries", _external=True)}')
-        if buyer.phone: send_sms(buyer.phone, f'Market2Farm: Admin replied to your inquiry. Check your account.')
+        if buyer.email: 
+            send_email(buyer.email, f'Market2Farm: Reply to your inquiry', f'Admin said: {filtered}\n\nView your inquiries: {url_for("my_inquiries", _external=True)}')
+        if buyer.phone: 
+            send_sms(buyer.phone, f'Market2Farm: Admin replied to your inquiry. Check your account.')
         flash('Reply sent to buyer.', 'success')
         return redirect(url_for('admin_inquiry_chat', inquiry_id=inquiry_id))
     replies = AdminReply.query.filter_by(inquiry_id=inquiry.id).order_by(AdminReply.created_at.asc()).all()
@@ -1744,12 +2140,12 @@ def admin_inquiry_chat(inquiry_id):
 def admin_reply_inquiry(inquiry_id):
     return redirect(url_for('admin_inquiry_chat', inquiry_id=inquiry_id))
 
-# ---------- ENHANCED ADMIN USER DETAIL ----------
 @app.route('/admin/user/<int:user_id>')
 @admin_required
 def admin_user_detail(user_id):
     user = db.session.get(User, user_id)
-    if not user: abort(404)
+    if not user: 
+        abort(404)
     orders = Order.query.filter_by(buyer_id=user.id).order_by(Order.created_at.desc()).all()
     products = Product.query.filter_by(farmer_id=user.id).all()
     inquiries = Inquiry.query.filter_by(buyer_id=user.id).all()
@@ -1759,9 +2155,13 @@ def admin_user_detail(user_id):
 @admin_required
 def add_order_note(order_id):
     order = db.session.get(Order, order_id)
-    if not order: flash('Order not found.', 'error'); return redirect(request.referrer or url_for('admin_dashboard'))
+    if not order: 
+        flash('Order not found.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
     note = request.form.get('note','').strip()
-    if not note: flash('Note cannot be empty.', 'error'); return redirect(request.referrer or url_for('admin_dashboard'))
+    if not note: 
+        flash('Note cannot be empty.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
     filtered = filter_contact_info(note)
     order_note = OrderNote(order_id=order.id, admin_id=current_user.id, note=filtered)
     db.session.add(order_note)
@@ -1773,8 +2173,12 @@ def add_order_note(order_id):
 @admin_required
 def admin_confirm_order(order_id):
     order = db.session.get(Order, order_id)
-    if not order: flash('Order not found.', 'error'); return redirect(request.referrer or url_for('admin_dashboard'))
-    if order.status != 'admin_connected': flash('Order must be in "admin_connected" status to confirm.', 'error'); return redirect(request.referrer or url_for('admin_dashboard'))
+    if not order: 
+        flash('Order not found.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
+    if order.status != 'admin_connected': 
+        flash('Order must be in "admin_connected" status to confirm.', 'error')
+        return redirect(request.referrer or url_for('admin_dashboard'))
     order.status = 'completed'
     db.session.commit()
     notify_user(order.buyer_id, f'Your order #{order.id} has been marked as completed by admin.')
@@ -1782,7 +2186,6 @@ def admin_confirm_order(order_id):
     flash('Order marked as completed.', 'success')
     return redirect(request.referrer or url_for('admin_dashboard'))
 
-# ---------- DIRECT ADMIN-USER CHAT ROUTES ----------
 @app.route('/admin/chat/<int:user_id>', methods=['GET', 'POST'])
 @admin_required
 def admin_chat(user_id):
@@ -1859,7 +2262,6 @@ def user_chat(user_id):
     db.session.commit()
     return render_template('user_chat.html', other_user=other, messages=messages)
 
-# ---------- USER CAN START CHAT WITH ADMIN ----------
 @app.route('/start-chat')
 @login_required
 def start_chat():
@@ -1869,11 +2271,9 @@ def start_chat():
         return redirect(url_for('dashboard'))
     return redirect(url_for('user_chat', user_id=admin.id))
 
-# ---------- NEW: ADMIN CHAT INBOX (list all conversations) ----------
 @app.route('/admin/chats')
 @admin_required
 def admin_chats():
-    # Get all users who have had a private message with this admin
     sent = db.session.query(PrivateMessage.to_user_id).filter(PrivateMessage.from_user_id == current_user.id)
     received = db.session.query(PrivateMessage.from_user_id).filter(PrivateMessage.to_user_id == current_user.id)
     all_user_ids = set([uid for (uid,) in sent.union(received).all() if uid != current_user.id])
@@ -1896,13 +2296,14 @@ def admin_chats():
     conversations.sort(key=lambda x: x['last_time'] or datetime.min, reverse=True)
     return render_template('admin/chats_list.html', conversations=conversations)
 
-# ---------- USER PROFILES ----------
 @app.route('/profile/<int:user_id>')
 def view_profile(user_id):
     user = db.session.get(User, user_id)
-    if not user: abort(404)
+    if not user: 
+        abort(404)
     products = []
-    if user.role == 'farmer': products = Product.query.filter_by(farmer_id=user.id, status='approved').all()
+    if user.role == 'farmer': 
+        products = Product.query.filter_by(farmer_id=user.id, status='approved').all()
     return render_template('profile.html', user=user, products=products)
 
 @app.route('/profile/edit', methods=['GET','POST'])
@@ -1913,11 +2314,18 @@ def edit_profile():
         current_user.location = request.form.get('location','')
         if 'avatar' in request.files:
             file = request.files['avatar']
-            if file.filename:
-                filename = secure_filename(file.filename)
-                os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                current_user.avatar = filename
+            if file and file.filename:
+                if cloudinary:
+                    try:
+                        upload_result = cloudinary.uploader.upload(file, folder='market2farm/avatars')
+                        current_user.avatar = upload_result['secure_url']
+                    except Exception as e:
+                        flash(f'Avatar upload failed: {str(e)}', 'error')
+                else:
+                    filename = secure_filename(f"avatar_{current_user.id}_{file.filename}")
+                    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                    current_user.avatar = url_for('uploaded_file', filename=filename, _external=True)
         db.session.commit()
         flash('Profile updated.', 'success')
         return redirect(url_for('view_profile', user_id=current_user.id))
@@ -1929,8 +2337,10 @@ def change_password():
     curr = request.form['current_password']
     new = request.form['new_password']
     confirm = request.form['confirm_password']
-    if not check_password_hash(current_user.password_hash, curr): flash('Current password is incorrect.', 'error')
-    elif new != confirm: flash('New passwords do not match.', 'error')
+    if not check_password_hash(current_user.password_hash, curr): 
+        flash('Current password is incorrect.', 'error')
+    elif new != confirm: 
+        flash('New passwords do not match.', 'error')
     else:
         current_user.password_hash = generate_password_hash(new)
         db.session.commit()
@@ -1947,7 +2357,9 @@ def google_callback():
     token = google.authorize_access_token()
     user_info = google.get('https://openidconnect.googleapis.com/v1/userinfo').json()
     email = user_info.get('email')
-    if not email: flash('Could not retrieve email from Google.', 'error'); return redirect(url_for('login_page'))
+    if not email: 
+        flash('Could not retrieve email from Google.', 'error')
+        return redirect(url_for('login_page'))
     user = User.query.filter_by(email=email).first()
     if not user:
         user = User(username=email.split('@')[0], email=email, password_hash=generate_password_hash('oauth-google'), role='buyer')
@@ -1963,9 +2375,11 @@ def add_review(product_id):
     data = request.json
     rating = data.get('rating')
     comment = data.get('comment')
-    if not rating or rating < 1 or rating > 5: return jsonify({'error':'Rating must be between 1 and 5'}),400
+    if not rating or rating < 1 or rating > 5: 
+        return jsonify({'error':'Rating must be between 1 and 5'}),400
     existing = Review.query.filter_by(product_id=product_id, user_id=current_user.id).first()
-    if existing: return jsonify({'error':'You have already reviewed this product'}),400
+    if existing: 
+        return jsonify({'error':'You have already reviewed this product'}),400
     review = Review(product_id=product_id, user_id=current_user.id, rating=rating, comment=comment)
     db.session.add(review)
     db.session.commit()
@@ -1990,17 +2404,25 @@ def search_products():
     sort = request.args.get('sort','newest')
     page = request.args.get('page',1,type=int)
     query = Product.query.filter_by(status='approved')
-    if q: query = query.filter(Product.name.ilike(f'%{q}%') | Product.description.ilike(f'%{q}%'))
-    if category and category != 'all': query = query.filter_by(category=category)
-    if min_price: query = query.filter(Product.price >= min_price)
-    if max_price: query = query.filter(Product.price <= max_price)
-    if organic: query = query.filter_by(organic=True)
-    if sort == 'price_asc': query = query.order_by(Product.price.asc())
-    elif sort == 'price_desc': query = query.order_by(Product.price.desc())
+    if q: 
+        query = query.filter(Product.name.ilike(f'%{q}%') | Product.description.ilike(f'%{q}%'))
+    if category and category != 'all': 
+        query = query.filter_by(category=category)
+    if min_price: 
+        query = query.filter(Product.price >= min_price)
+    if max_price: 
+        query = query.filter(Product.price <= max_price)
+    if organic: 
+        query = query.filter_by(organic=True)
+    if sort == 'price_asc': 
+        query = query.order_by(Product.price.asc())
+    elif sort == 'price_desc': 
+        query = query.order_by(Product.price.desc())
     elif sort == 'rating':
         subq = db.session.query(Review.product_id, func.avg(Review.rating).label('avg_rating')).group_by(Review.product_id).subquery()
         query = query.outerjoin(subq, Product.id == subq.c.product_id).order_by(subq.c.avg_rating.desc().nullslast())
-    else: query = query.order_by(Product.created_at.desc())
+    else: 
+        query = query.order_by(Product.created_at.desc())
     pagination = query.paginate(page=page, per_page=12)
     categories = [c[0] for c in db.session.query(Product.category).distinct().all() if c[0]]
     return render_template('search_results.html', products=pagination.items, pagination=pagination, query=q, selected_category=category, min_price=min_price, max_price=max_price, organic=organic, sort=sort, categories=categories)
@@ -2008,7 +2430,8 @@ def search_products():
 @app.route('/seller/dashboard')
 @login_required
 def seller_dashboard():
-    if current_user.role not in ['farmer','admin','chief_admin']: abort(403)
+    if current_user.role not in ['farmer','admin','chief_admin']: 
+        abort(403)
     products = Product.query.filter_by(farmer_id=current_user.id).all()
     product_ids = [p.id for p in products]
     orders = Order.query.filter(Order.product_id.in_(product_ids)).all()
@@ -2069,9 +2492,11 @@ def not_found(e):
 
 # ---------- Database Initialization ----------
 with app.app_context():
+    print("Initializing database...")
     db.create_all()
     ensure_runtime_tables()
     migrate_existing_database()
+    
     db.session.execute(text('CREATE INDEX IF NOT EXISTS idx_product_status ON product(status)'))
     db.session.execute(text('CREATE INDEX IF NOT EXISTS idx_product_status_price ON product(status, price)'))
     db.session.execute(text('CREATE INDEX IF NOT EXISTS idx_order_buyer ON "order"(buyer_id)'))
@@ -2083,11 +2508,63 @@ with app.app_context():
     db.session.execute(text('CREATE INDEX IF NOT EXISTS idx_cartitem_cart_id ON cart_item(cart_id)'))
     db.session.execute(text('CREATE INDEX IF NOT EXISTS idx_notification_user_read ON notification(user_id, read)'))
     db.session.commit()
+    
     if not User.query.filter_by(role='chief_admin').first():
         chief = User(username='chief_admin', email='chief@market2farm.com', password_hash=generate_password_hash('Admin@2025'), role='chief_admin')
         db.session.add(chief)
         db.session.commit()
+        print("Created chief_admin user (username: chief_admin, password: Admin@2025)")
+    
     seed_inbuilt_marketplace()
+    print("Database initialization complete!")
 
+# -------------------------------------------------------------------
+# FIXED: Main entry point with SSL disabled for development
+# -------------------------------------------------------------------
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True)
+    debug_mode = os.getenv('DEBUG', 'False').lower() == 'true'
+    
+    print("\n" + "=" * 70)
+    print(" MARKET2FARM APPLICATION - DEVELOPMENT MODE")
+    print("=" * 70)
+    print(f" Debug Mode: {'ON' if debug_mode else 'OFF'}")
+    print(f" HTTPS Enforcement: DISABLED (for local development)")
+    print(f" Database: sqlite:///market2farm.db")
+    print(f" Upload Folder: {app.config['UPLOAD_FOLDER']}")
+    print("-" * 70)
+    print(" Access the application at:")
+    print("   → http://localhost:5000")
+    print("   → http://127.0.0.1:5000")
+    print("-" * 70)
+    print(" Test Accounts:")
+    print("   → Chief Admin: chief_admin / Admin@2025")
+    print("   → Demo Farmer:  market2farm_farmer / Farmer@2025")
+    print("   → Demo Buyer:   (Register a new account)")
+    print("=" * 70)
+    print(" Press CTRL+C to stop the server")
+    print("=" * 70)
+    print()
+    
+    try:
+        app.run(host='127.0.0.1', port=5000, debug=debug_mode, use_reloader=False, threaded=True)
+    except OSError as e:
+        if "Address already in use" in str(e) or "10048" in str(e):
+            print("\n" + "!" * 70)
+            print(" ERROR: Port 5000 is already in use!")
+            print("!" * 70)
+            print("\n Try these solutions:")
+            print(" 1. Find and kill the process using port 5000:")
+            print("    netstat -ano | findstr :5000")
+            print("    taskkill /PID <PID> /F")
+            print(" 2. Or try a different port by changing the code")
+            print(" 3. Wait a few seconds and try again")
+        else:
+            print(f"\n ERROR: {e}")
+    except KeyboardInterrupt:
+        print("\n\n" + "=" * 70)
+        print(" SERVER STOPPED - Goodbye!")
+        print("=" * 70)
+    except Exception as e:
+        print(f"\n Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
