@@ -12,9 +12,15 @@ pip-delete-this-directory.txt
 *.db
 *.sqlite3
 .DS_Store
+.env
 .env.local
+.env.example
 .env.development
+.env.production
 uploads/
 backups/
 *.log
 market2farm.db
+*.pem
+*.key
+*.crt
