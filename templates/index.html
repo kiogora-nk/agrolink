@@ -1,49 +1,43 @@
-{% extends "base.html" %}
-{% block title %}AI-Powered Farm Marketplace{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}BioFarm Fruits - Fresh Fruits & Seedlings{% endblock %}
 {% block content %}
-<section class="overflow-hidden rounded bg-slate-950 text-white shadow-sm">
+<section class="overflow-hidden rounded bg-green-950 text-white shadow-sm">
     <div class="grid min-h-[520px] gap-8 lg:grid-cols-[1.05fr_0.95fr]">
         <div class="flex flex-col justify-center p-6 md:p-12">
-            <p class="mb-3 text-sm font-semibold uppercase tracking-wide text-lime-300">Prepared for Kiogo Newton</p>
-            <h1 class="max-w-3xl text-4xl font-extrabold leading-tight md:text-6xl">Market2Farm connects trusted farmers to real buyers.</h1>
-            <p class="mt-5 max-w-2xl text-lg text-slate-200">Browse dragon fruits, onions, Hass and Fuerte avocados, tomatoes, and verified produce backed by AI crop support, climate intelligence, secure payments, and admin moderation.</p>
+            <p class="mb-3 text-sm font-semibold uppercase tracking-wide text-green-300">🌱 Welcome to BioFarm Fruits</p>
+            <h1 class="max-w-3xl text-4xl font-extrabold leading-tight md:text-6xl">Quality Dragon Fruits & Seedlings</h1>
+            <p class="mt-5 max-w-2xl text-lg text-slate-200">We offer premium dragon fruits, avocado seedlings, and expert farming training. Get the best quality produce and learn modern farming techniques.</p>
             <div class="mt-8 flex flex-wrap gap-3">
-                <a href="/marketplace" class="rounded bg-lime-400 px-6 py-3 font-bold text-slate-950">Shop Marketplace</a>
-                <a href="/register" class="rounded border border-white/40 px-6 py-3 font-bold text-white">Join as Farmer</a>
-                <a href="/disease-detection" class="rounded border border-white/40 px-6 py-3 font-bold text-white">Try Disease AI</a>
+                <a href="/products" class="rounded bg-green-400 px-6 py-3 font-bold text-slate-950">Shop Now</a>
+                <a href="/training" class="rounded border border-white/40 px-6 py-3 font-bold text-white">Book Training</a>
+                <a href="/contact" class="rounded border border-white/40 px-6 py-3 font-bold text-white">Contact Us</a>
             </div>
         </div>
         <div class="grid grid-cols-2 gap-3 p-4 md:p-6">
-            <img class="h-full min-h-48 w-full rounded object-cover" src="https://commons.wikimedia.org/wiki/Special:Redirect/file/Red%20dragon%20fruit.jpg" alt="Red dragon fruit">
-            <img class="h-full min-h-48 w-full rounded object-cover" src="https://images.unsplash.com/photo-1601039641847-7857b994d704?auto=format&fit=crop&w=900&q=80" alt="Hass avocado">
-            <img class="h-full min-h-48 w-full rounded object-cover" src="https://images.unsplash.com/photo-1508747703725-719777637510?auto=format&fit=crop&w=900&q=80" alt="Red onions">
-            <img class="h-full min-h-48 w-full rounded object-cover" src="https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=900&q=80" alt="Roma tomatoes">
+            <img class="h-full min-h-48 w-full rounded object-cover" src="https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400" alt="Dragon Fruit">
+            <img class="h-full min-h-48 w-full rounded object-cover" src="https://images.unsplash.com/photo-1601039641847-7857b994d704?w=400" alt="Avocado">
+            <img class="h-full min-h-48 w-full rounded object-cover" src="https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=400" alt="Seedlings">
+            <img class="h-full min-h-48 w-full rounded object-cover" src="https://images.unsplash.com/photo-1519162808019-7de1683fa2ad?w=400" alt="Fruits">
         </div>
     </div>
 </section>
 
-<section class="mt-10 grid gap-4 md:grid-cols-4">
-    <div class="rounded bg-white p-5 shadow-sm"><p class="text-sm font-semibold text-green-700">Marketplace</p><h2 class="mt-1 text-xl font-bold">Verified produce</h2><p class="mt-2 text-sm text-slate-600">Products stay pending until admin approval.</p></div>
-    <div class="rounded bg-white p-5 shadow-sm"><p class="text-sm font-semibold text-green-700">AI crop tools</p><h2 class="mt-1 text-xl font-bold">Disease support</h2><p class="mt-2 text-sm text-slate-600">Farmers get quick treatment and prevention guidance.</p></div>
-    <div class="rounded bg-white p-5 shadow-sm"><p class="text-sm font-semibold text-green-700">Climate</p><h2 class="mt-1 text-xl font-bold">Weather insight</h2><p class="mt-2 text-sm text-slate-600">Rain and temperature signals guide farming decisions.</p></div>
-    <div class="rounded bg-white p-5 shadow-sm"><p class="text-sm font-semibold text-green-700">Security</p><h2 class="mt-1 text-xl font-bold">Protected trade</h2><p class="mt-2 text-sm text-slate-600">CSRF, rate limits, audit logs, and role controls.</p></div>
-</section>
-
-<section class="mt-12">
+<!-- Products Section -->
+<section class="mt-10">
     <div class="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-            <p class="text-sm font-semibold uppercase tracking-wide text-green-700">Built-in marketplace</p>
-            <h2 class="text-3xl font-bold text-slate-900">Fresh produce ready to trade</h2>
+            <p class="text-sm font-semibold uppercase tracking-wide text-green-700">Our Products</p>
+            <h2 class="text-3xl font-bold text-slate-900">Premium Fruits & Seedlings</h2>
         </div>
-        <a href="/marketplace" class="text-sm font-bold text-green-800 underline">Browse all products</a>
+        <a href="/products" class="text-sm font-bold text-green-800 underline">View all products</a>
     </div>
     {% if products %}
     <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        {% for product in products %}
+        {% for product in products[:8] %}
         <article class="overflow-hidden rounded bg-white shadow-sm">
             <div class="aspect-[4/3] bg-slate-100">
                 {% if product.image %}
-                <img src="{{ url_for('uploaded_file', filename=product.image) if product.image and not product.image.startswith('http') else product.image }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://commons.wikimedia.org/wiki/Special:Redirect/file/Red%20dragon%20fruit.jpg'">
+                <img src="{{ product.image }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400'">
                 {% else %}
                 <div class="flex h-full items-center justify-center text-slate-400">{{ product.name }}</div>
                 {% endif %}
@@ -51,10 +45,9 @@
             <div class="p-4">
                 <div class="flex items-start justify-between gap-3">
                     <h3 class="text-lg font-bold text-slate-900">{{ product.name }}</h3>
-                    {% if product.organic %}<span class="rounded bg-lime-100 px-2 py-1 text-xs font-bold text-lime-800">Organic</span>{% endif %}
+                    <span class="rounded bg-green-100 px-2 py-1 text-xs font-bold text-green-800">{{ product.category }}</span>
                 </div>
-                <p class="mt-1 text-sm text-slate-500">{{ product.category|capitalize }}</p>
-                <p class="line-clamp-2 mt-2 text-sm text-slate-600">{{ product.description }}</p>
+                <p class="mt-2 text-sm text-slate-600">{{ product.description[:100] }}...</p>
                 <div class="mt-4 flex items-center justify-between">
                     <p class="font-bold text-green-800">KES {{ "{:,.0f}".format(product.price or 0) }}</p>
                     <a href="/product/{{ product.id }}" class="rounded bg-green-700 px-3 py-2 text-sm font-semibold text-white">View</a>
@@ -64,22 +57,23 @@
         {% endfor %}
     </div>
     {% else %}
-    <div class="rounded bg-white p-8 text-center text-slate-600">Products will appear here after the first app startup seeds the marketplace.</div>
+    <div class="rounded bg-white p-8 text-center text-slate-600">Products coming soon! Check back later.</div>
     {% endif %}
 </section>
 
+<!-- Quick Contact Section -->
 <section class="mt-12 rounded bg-green-900 p-6 text-white md:p-10">
     <div class="grid gap-6 md:grid-cols-[1fr_0.8fr] md:items-center">
         <div>
-            <p class="text-sm font-semibold uppercase tracking-wide text-lime-300">System blueprint included</p>
-            <h2 class="mt-2 text-3xl font-bold">AI marketplace, subscriptions, payments, climate, notifications, and admin controls.</h2>
-            <p class="mt-3 text-green-50">The current Flask system now reflects the architecture direction while staying compatible with your existing templates, database, and routes.</p>
+            <p class="text-sm font-semibold uppercase tracking-wide text-green-300">Get In Touch</p>
+            <h2 class="mt-2 text-3xl font-bold">Need Farming Training or Products?</h2>
+            <p class="mt-3 text-green-50">Reach out to us directly through phone, WhatsApp, or social media. We're here to help!</p>
         </div>
         <div class="grid grid-cols-2 gap-3 text-sm">
-            <a href="/climate-page" class="rounded bg-white/10 p-4 font-semibold">Climate Intelligence</a>
-            <a href="/chatbot-page" class="rounded bg-white/10 p-4 font-semibold">AI Chatbot</a>
-            <a href="/subscribe" class="rounded bg-white/10 p-4 font-semibold">Subscriptions</a>
-            <a href="/terms" class="rounded bg-white/10 p-4 font-semibold">Trust and Terms</a>
+            <a href="tel:+254716091772" class="rounded bg-white/10 p-4 font-semibold text-center">📞 Call Us</a>
+            <a href="https://wa.me/254716091772" class="rounded bg-white/10 p-4 font-semibold text-center">💬 WhatsApp</a>
+            <a href="#" class="rounded bg-white/10 p-4 font-semibold text-center">📺 YouTube</a>
+            <a href="#" class="rounded bg-white/10 p-4 font-semibold text-center">📸 Instagram</a>
         </div>
     </div>
 </section>

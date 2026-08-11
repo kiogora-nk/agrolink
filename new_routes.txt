@@ -1,0 +1,91 @@
+﻿# Add after your existing routes
+
+@app.route('/training', methods=['GET', 'POST'])
+def training():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        email = request.form.get('email')
+        phone = request.form.get('phone')
+        session_type = request.form.get('session_type')
+        preferred_date = request.form.get('preferred_date')
+        message = request.form.get('message')
+        
+        # Save training booking
+        training = TrainingSession(
+            user_id=current_user.id if current_user.is_authenticated else None,
+            name=name,
+            email=email,
+            phone=phone,
+            session_type=session_type,
+            preferred_date=datetime.strptime(preferred_date, '%Y-%m-%d') if preferred_date else None,
+            message=message
+        )
+        db.session.add(training)
+        db.session.commit()
+        
+        flash('Training session booked! We will contact you soon.', 'success')
+        return redirect(url_for('training'))
+    
+    return render_template('training.html')
+
+@app.route('/contact', methods=['GET', 'POST'])
+def contact_page():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        email = request.form.get('email')
+        phone = request.form.get('phone')
+        subject = request.form.get('subject')
+        message = request.form.get('message')
+        
+        contact = ContactMessage(
+            name=name,
+            email=email,
+            phone=phone,
+            subject=subject,
+            message=message
+        )
+        db.session.add(contact)
+        db.session.commit()
+        
+        flash('Message sent! We will get back to you soon.', 'success')
+        return redirect(url_for('contact_page'))
+    
+    return render_template('contact.html')
+
+@app.route('/products')
+def product_list():
+    products = Product.query.filter_by(status='approved').all()
+    return render_template('products.html', products=products)
+
+# Admin Routes - Training Sessions
+@app.route('/admin/training')
+@admin_required
+def admin_training():
+    sessions = TrainingSession.query.order_by(TrainingSession.created_at.desc()).all()
+    return render_template('admin/training.html', sessions=sessions)
+
+@app.route('/admin/training/<int:id>/update', methods=['POST'])
+@admin_required
+def update_training_status(id):
+    session = db.session.get(TrainingSession, id)
+    if session:
+        session.status = request.form.get('status')
+        db.session.commit()
+        flash('Training status updated.', 'success')
+    return redirect(url_for('admin_training'))
+
+# Admin Routes - Contact Messages
+@app.route('/admin/messages')
+@admin_required
+def admin_messages():
+    messages = ContactMessage.query.order_by(ContactMessage.created_at.desc()).all()
+    return render_template('admin/messages.html', messages=messages)
+
+@app.route('/admin/message/<int:id>/read', methods=['POST'])
+@admin_required
+def mark_message_read(id):
+    message = db.session.get(ContactMessage, id)
+    if message:
+        message.read = True
+        db.session.commit()
+    return redirect(url_for('admin_messages'))

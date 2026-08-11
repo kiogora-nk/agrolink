@@ -1,0 +1,88 @@
+﻿{% extends "base.html" %}
+{% block title %}Contact BioFarm Fruits{% endblock %}
+{% block content %}
+<section class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">Get in Touch</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <!-- Contact Form -->
+        <div class="bg-white rounded shadow p-6">
+            <h2 class="text-xl font-bold mb-4">Send Us a Message</h2>
+            <form method="POST" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Full Name *</label>
+                    <input type="text" name="name" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Email *</label>
+                    <input type="email" name="email" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Phone Number</label>
+                    <input type="tel" name="phone" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Subject</label>
+                    <input type="text" name="subject" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Message *</label>
+                    <textarea name="message" rows="4" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" placeholder="How can we help you?"></textarea>
+                </div>
+                <button type="submit" class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700">
+                    Send Message
+                </button>
+            </form>
+        </div>
+        
+        <!-- Contact Info -->
+        <div class="space-y-6">
+            <div class="bg-green-50 rounded shadow p-6">
+                <h3 class="font-bold text-lg mb-4">📞 Contact Directly</h3>
+                <div class="space-y-3">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl">📞</span>
+                        <div>
+                            <p class="font-semibold">Phone</p>
+                            <a href="tel:+254716091772" class="text-green-700 hover:underline">+254 716 091 772</a>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl">💬</span>
+                        <div>
+                            <p class="font-semibold">WhatsApp</p>
+                            <a href="https://wa.me/254716091772" class="text-green-700 hover:underline">Chat on WhatsApp</a>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl">📧</span>
+                        <div>
+                            <p class="font-semibold">Email</p>
+                            <a href="mailto:info@biofarmfruits.co.ke" class="text-green-700 hover:underline">info@biofarmfruits.co.ke</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-green-50 rounded shadow p-6">
+                <h3 class="font-bold text-lg mb-4">Follow Us</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <a href="#" class="bg-red-600 text-white px-4 py-3 rounded text-center hover:bg-red-700">
+                        📺 YouTube
+                    </a>
+                    <a href="#" class="bg-pink-600 text-white px-4 py-3 rounded text-center hover:bg-pink-700">
+                        📸 Instagram
+                    </a>
+                    <a href="#" class="bg-blue-600 text-white px-4 py-3 rounded text-center hover:bg-blue-700">
+                        📘 Facebook
+                    </a>
+                    <a href="#" class="bg-black text-white px-4 py-3 rounded text-center hover:bg-gray-800">
+                        🎵 TikTok
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
