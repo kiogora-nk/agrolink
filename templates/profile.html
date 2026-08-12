@@ -1,38 +1,74 @@
-{% extends "base.html" %}
-{% block title %}{{ user.username }}'s Profile{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}My Profile - BioFarm Fruits{% endblock %}
 {% block content %}
-<div class="max-w-3xl mx-auto bg-white p-6 rounded-2xl shadow-lg">
-    <div class="flex items-center space-x-4">
-        <img src="{{ user.avatar if user.avatar else 'https://via.placeholder.com/100' }}" alt="Avatar" class="w-20 h-20 rounded-full object-cover">
-        <div>
-            <h1 class="text-2xl font-bold">{{ user.username }}</h1>
-            <p class="text-gray-600">{{ user.role.capitalize() }}</p>
-            {% if user.location %}<p class="text-sm">📍 {{ user.location }}</p>{% endif %}
-        </div>
-        {% if current_user.id == user.id %}
-            <a href="/profile/edit" class="ml-auto bg-green-100 text-green-800 px-4 py-2 rounded-full text-sm">Edit Profile</a>
-        {% endif %}
-    </div>
-    {% if user.bio %}
-        <div class="mt-4">
-            <h3 class="font-semibold">About</h3>
-            <p class="text-gray-700">{{ user.bio }}</p>
-        </div>
-    {% endif %}
-    {% if products %}
-        <div class="mt-6">
-            <h3 class="font-semibold text-lg mb-2">Products by {{ user.username }}</h3>
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {% for product in products %}
-                <div class="border rounded-lg p-2">
-                    <img src="{{ product.image if product.image else 'https://via.placeholder.com/150' }}" alt="{{ product.name }}" class="w-full h-32 object-cover rounded">
-                    <p class="font-bold mt-1">{{ product.name }}</p>
-                    <p class="text-green-700">KES {{ product.price }}</p>
-                    <a href="/product/{{ product.id }}" class="text-green-600 text-sm">View</a>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">👤 My Profile</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Profile Sidebar -->
+        <div class="md:col-span-1">
+            <div class="bg-white rounded-lg shadow p-6 text-center">
+                <div class="w-32 h-32 mx-auto rounded-full bg-gray-200 overflow-hidden mb-4">
+                    {% if user.avatar %}
+                    <img src="{{ user.avatar }}" alt="{{ user.username }}" class="w-full h-full object-cover">
+                    {% else %}
+                    <div class="flex items-center justify-center h-full text-4xl bg-green-100 text-green-600">
+                        {{ user.username[0].upper() }}
+                    </div>
+                    {% endif %}
                 </div>
-                {% endfor %}
+                <h2 class="text-xl font-bold">{{ user.username }}</h2>
+                <p class="text-gray-600">{{ user.role|capitalize }}</p>
+                {% if user.location %}
+                <p class="text-sm text-gray-500 mt-2">📍 {{ user.location }}</p>
+                {% endif %}
+                <p class="text-sm text-gray-500">Joined: {{ user.created_at.strftime('%b %d, %Y') }}</p>
             </div>
         </div>
-    {% endif %}
+        
+        <!-- Profile Form -->
+        <div class="md:col-span-2">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-xl font-bold mb-4">Edit Profile</h3>
+                <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Username</label>
+                        <input type="text" value="{{ user.username }}" disabled class="w-full px-4 py-2 border rounded-lg bg-gray-100">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Email</label>
+                        <input type="email" value="{{ user.email }}" disabled class="w-full px-4 py-2 border rounded-lg bg-gray-100">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Phone Number</label>
+                        <input type="tel" name="phone" value="{{ user.phone or '' }}" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Location</label>
+                        <input type="text" name="location" value="{{ user.location or '' }}" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" placeholder="e.g., Nairobi, Kenya">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Bio</label>
+                        <textarea name="bio" rows="3" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" placeholder="Tell us about yourself...">{{ user.bio or '' }}</textarea>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Profile Picture</label>
+                        <input type="file" name="avatar" accept="image/*" class="w-full px-4 py-2 border rounded-lg">
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700">
+                        Update Profile
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

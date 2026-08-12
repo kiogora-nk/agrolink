@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Climate Intelligence{% endblock %}
 {% block content %}
 <h2 class="text-2xl font-bold mb-4">Climate Intelligence</h2>
@@ -13,7 +13,7 @@ async function getClimate() {
         const lon = pos.coords.longitude;
         const res = await fetch(`/api/climate?lat=${lat}&lon=${lon}`);
         const data = await res.json();
-        let html = `Temperature max: ${data.temperature_max}°C<br>Rain: ${data.precipitation} mm`;
+        let html = `Temperature max: ${data.temperature_max}Â°C<br>Rain: ${data.precipitation} mm`;
         if (data.recommendations) {
             html += '<br><strong>Recommendations:</strong><ul>';
             data.recommendations.forEach(r => html += `<li>${r}</li>`);
@@ -22,7 +22,7 @@ async function getClimate() {
         document.getElementById('climate-result').innerHTML = html;
     }, () => {
         fetch('/api/climate').then(r=>r.json()).then(data => {
-            document.getElementById('climate-result').innerHTML = `Temperature: ${data.temperature_max}°C, Rain: ${data.precipitation} mm`;
+            document.getElementById('climate-result').innerHTML = `Temperature: ${data.temperature_max}Â°C, Rain: ${data.precipitation} mm`;
         });
     });
 }

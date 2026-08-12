@@ -1,0 +1,43 @@
+﻿{% extends "base.html" %}
+{% block title %}Diagnosis Results - BioFarm Fruits{% endblock %}
+{% block content %}
+<section class="max-w-3xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">🔬 Diagnosis Results</h1>
+    
+    <div class="bg-white rounded shadow p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold">Crop: {{ crop_type|replace('_', ' ')|title }}</h2>
+            <span class="px-3 py-1 rounded-full text-sm font-bold 
+                {% if confidence > 0.8 %}bg-green-100 text-green-800
+                {% elif confidence > 0.6 %}bg-yellow-100 text-yellow-800
+                {% else %}bg-red-100 text-red-800{% endif %}">
+                Confidence: {{ "%.0f"|format(confidence * 100) }}%
+            </span>
+        </div>
+        
+        <div class="border-t pt-4">
+            <p class="font-semibold text-gray-700">Symptoms Described:</p>
+            <p class="text-gray-600 mt-1">{{ symptoms }}</p>
+        </div>
+        
+        <div class="border-t pt-4 mt-4">
+            <p class="font-semibold text-gray-700">Diagnosis:</p>
+            <p class="text-xl font-bold text-green-700 mt-1">{{ diagnosis }}</p>
+        </div>
+        
+        <div class="border-t pt-4 mt-4">
+            <p class="font-semibold text-gray-700">Recommended Treatment:</p>
+            <p class="text-gray-600 mt-1">{{ treatment }}</p>
+        </div>
+    </div>
+    
+    <div class="flex gap-4">
+        <a href="/disease-detection" class="bg-green-600 text-white px-6 py-2 rounded font-bold hover:bg-green-700">
+            🔍 Diagnose Another
+        </a>
+        <a href="/contact" class="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700">
+            📧 Need Expert Help?
+        </a>
+    </div>
+</section>
+{% endblock %}

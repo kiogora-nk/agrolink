@@ -1,69 +1,48 @@
-{% extends "base.html" %}
-{% block title %}Disease Detection{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}AI Crop Disease Detection - BioFarm Fruits{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-bold mb-4">AI Crop Disease Detection</h2>
-<p class="mb-4 text-gray-600">Upload a photo or use your camera, describe symptoms, and our AI will diagnose the crop disease.</p>
-<form id="disease-form" class="max-w-lg bg-white p-6 rounded shadow" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <textarea name="description" placeholder="Describe symptoms (e.g., yellow spots on leaves, wilting)..." class="w-full p-2 mb-3 border rounded"></textarea>
-    <select name="crop_type" id="crop_type" class="w-full p-2 mb-3 border rounded">
-        <option value="general">Select crop (optional)</option>
-        <option value="tomato">Tomato</option>
-        <option value="maize">Maize</option>
-        <option value="avocado">Avocado</option>
-        <option value="onion">Onion</option>
-        <option value="dragon_fruit">Dragon Fruit</option>
-        <option value="potato">Potato</option>
-    </select>
-    <!-- File input with camera button -->
-    <div class="flex gap-2 mb-3">
-        <input type="file" name="image" accept="image/*" class="w-full p-2 border rounded" id="image-input">
-        <button type="button" id="camera-btn" class="bg-gray-600 text-white px-4 py-2 rounded">📷 Open Camera</button>
+<section class="max-w-3xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">🌿 AI Crop Disease Detection</h1>
+    <p class="text-gray-600 mb-6">Describe the symptoms or upload an image to get AI-powered diagnosis for your crops.</p>
+    
+    <div class="bg-white rounded shadow p-6">
+        <form method="POST" enctype="multipart/form-data" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            
+            <div>
+                <label class="block text-sm font-medium mb-1">Crop Type</label>
+                <select name="crop_type" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                    <option value="dragon_fruit">🐉 Dragon Fruit</option>
+                    <option value="avocado">🥑 Avocado</option>
+                    <option value="tomato">🍅 Tomato</option>
+                    <option value="maize">🌽 Maize</option>
+                    <option value="general">General Crop</option>
+                </select>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium mb-1">Describe Symptoms *</label>
+                <textarea name="symptoms" rows="4" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" placeholder="e.g., Yellow spots on leaves, wilting stems, fruit rot..."></textarea>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium mb-1">Upload Image (Optional)</label>
+                <input type="file" name="image" accept="image/*" class="w-full px-4 py-2 border rounded-lg">
+            </div>
+            
+            <button type="submit" class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700">
+                🔍 Diagnose Disease
+            </button>
+        </form>
     </div>
-    <button type="submit" id="analyze-btn" class="bg-green-600 text-white px-4 py-2 rounded">Analyze</button>
-    <div id="loading" class="hidden mt-3 text-blue-600">Analyzing... Please wait.</div>
-</form>
-<div id="result" class="mt-4 p-4 bg-white rounded shadow"></div>
-
-<script>
-document.getElementById('camera-btn').addEventListener('click', () => {
-    const input = document.getElementById('image-input');
-    input.setAttribute('capture', 'environment');
-    input.click();
-    setTimeout(() => input.removeAttribute('capture'), 1000);
-});
-
-document.getElementById('disease-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const resultDiv = document.getElementById('result');
-    const loadingDiv = document.getElementById('loading');
-    loadingDiv.classList.remove('hidden');
-    resultDiv.innerHTML = '';
-    showLoading();
-    try {
-        const response = await fetch('/api/disease/detect', {
-            method: 'POST',
-            body: formData
-        });
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
-        }
-        const data = await response.json();
-        hideLoading();
-        loadingDiv.classList.add('hidden');
-        resultDiv.innerHTML = `
-            <strong>Diagnosis:</strong> ${data.disease}<br>
-            <strong>Confidence:</strong> ${(data.confidence * 100).toFixed(1)}%<br>
-            <strong>Treatment:</strong> ${data.treatment}<br>
-            ${data.prevention ? `<strong>Prevention:</strong> ${data.prevention}<br>` : ''}
-            ${data.note ? `<strong>Note:</strong> ${data.note}` : ''}
-        `;
-    } catch (err) {
-        hideLoading();
-        loadingDiv.classList.add('hidden');
-        resultDiv.innerHTML = `<p class="text-red-600">Error: ${err.message}</p>`;
-    }
-});
-</script>
+    
+    <div class="mt-6 bg-green-50 rounded p-4 text-sm text-gray-600">
+        <p class="font-semibold">💡 How it works:</p>
+        <ul class="list-disc list-inside mt-2 space-y-1">
+            <li>AI analyzes symptoms using our disease database</li>
+            <li>Provides diagnosis, treatment, and confidence score</li>
+            <li>For accurate results, describe symptoms in detail</li>
+        </ul>
+    </div>
+</section>
 {% endblock %}
