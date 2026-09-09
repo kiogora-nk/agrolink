@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Error Console{% endblock %}
+{% block content %}
+<section class="space-y-5">
+    <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+            <h1 class="text-3xl font-bold text-slate-900">Error Console</h1>
+            <p class="text-slate-600">Problems users have hit. Read the detail, fix the cause, then mark resolved.</p>
+        </div>
+        <a href="{{ url_for('admin_dashboard') }}" class="rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-800">Back to Dashboard</a>
+    </div>
+
+    <div class="flex flex-wrap gap-2">
+        {% for key in ['open', 'resolved'] %}
+        <a href="{{ url_for('admin_errors', status=key) }}"
+           class="rounded-full px-4 py-1 text-sm font-semibold {% if selected_status == key %}bg-amber-600 text-white{% else %}bg-white text-slate-700 border border-slate-200{% endif %}">
+            {{ key|capitalize }} ({{ counts[key] }})
+        </a>
+        {% endfor %}
+    </div>
+
+    <div class="space-y-3">
+        {% for r in reports %}
+        <div class="rounded bg-white shadow-sm p-4">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                    <span class="font-mono text-sm font-bold text-slate-800">{{ r.reference }}</span>
+                    <span class="ml-2 rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">{{ r.error_type }}</span>
+                    <span class="ml-2 rounded {% if r.status == 'resolved' %}bg-green-100 text-green-800{% else %}bg-amber-100 text-amber-800{% endif %} px-2 py-0.5 text-xs font-semibold">{{ r.status }}</span>
+                </div>
+                <span class="text-xs text-slate-500">{{ r.created_at.strftime('%b %d, %Y %H:%M') if r.created_at else '' }}</span>
+            </div>
+
+            <p class="mt-2 text-sm text-slate-600">
+                <span class="font-semibold">{{ r.method }}</span> {{ r.path }}
+                {% if r.user %} · by {{ r.user.username }}{% else %} · guest{% endif %}
+            </p>
+
+            {% if r.user_note %}
+            <p class="mt-2 rounded bg-slate-50 p-2 text-sm text-slate-700"><span class="font-semibold">User said:</span> {{ r.user_note }}</p>
+            {% endif %}
+
+            <details class="mt-2">
+                <summary class="cursor-pointer text-sm font-semibold text-amber-700">Technical detail</summary>
+                <pre class="mt-2 overflow-x-auto rounded bg-slate-900 p-3 text-xs text-slate-100 whitespace-pre-wrap">{{ r.detail }}</pre>
+            </details>
+
+            <div class="mt-3 flex items-center gap-3">
+                {% if r.status != 'resolved' %}
+                <form method="POST" action="{{ url_for('resolve_error', id=r.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="rounded bg-amber-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-amber-700">Mark resolved</button>
+                </form>
+                {% else %}
+                <span class="text-xs text-slate-500">Resolved{% if r.resolver %} by {{ r.resolver.username }}{% endif %}{% if r.resolved_at %} on {{ r.resolved_at.strftime('%b %d, %Y') }}{% endif %}</span>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="rounded bg-white p-6 text-center text-slate-500 shadow-sm">
+            {% if selected_status == 'open' %}No open errors. Everything's running smoothly.{% else %}No resolved errors yet.{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

@@ -1,9 +1,15 @@
-﻿services:
+﻿databases:
+  # Render injects DATABASE_URL into the web service automatically.
+  - name: market2farm-db
+    plan: basic-256mb
+    # Change to 'free' if you want the 90-day free Postgres (data expires after 90 days)
+
+services:
   - type: web
     name: market2farm
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn "app:create_app()" --workers 2 --timeout 120
     envVars:
       - key: SECRET_KEY
         sync: false
@@ -11,3 +17,11 @@
         sync: false
       - key: DEBUG
         value: false
+      - key: SITE_URL
+        sync: false
+      # Optional: enables image-based disease detection
+      - key: CROP_VISION_API_KEY
+        sync: false
+      - key: CROP_VISION_MODEL
+        sync: false
+

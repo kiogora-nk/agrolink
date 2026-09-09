@@ -4,10 +4,13 @@
 <section class="space-y-5">
     <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-            <h1 class="text-3xl font-bold text-slate-900">Product Review Queue</h1>
-            <p class="text-slate-600">Approve trusted farm listings and reject incomplete or suspicious uploads.</p>
+            <h1 class="text-3xl font-bold text-slate-900">Manage Products</h1>
+            <p class="text-slate-600">Create, edit and price listings; approve or reject farmer uploads.</p>
         </div>
-        <a href="/admin/dashboard" class="rounded border border-green-700 px-4 py-2 text-sm font-semibold text-green-800">Back to Admin Dashboard</a>
+        <div class="flex gap-2">
+            <a href="{{ url_for('admin_dashboard') }}" class="rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-800">Dashboard</a>
+            <a href="{{ url_for('admin_product_new') }}" class="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">New Product</a>
+        </div>
     </div>
 
     {% if products %}
@@ -32,13 +35,22 @@
                     </div>
                     <p class="mt-3 text-sm text-slate-600">{{ product.description or 'No description provided.' }}</p>
                     <div class="mt-4 flex flex-wrap gap-2">
-                        <form method="POST" action="/admin/approve/{{ product.id }}">
+                        <a href="{{ url_for('admin_product_edit', id=product.id) }}" class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white">Edit</a>
+                        {% if product.status != 'approved' %}
+                        <form method="POST" action="{{ url_for('approve_product', id=product.id) }}">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="rounded bg-green-700 px-4 py-2 text-sm font-semibold text-white">Approve</button>
+                            <button type="submit" class="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white">Approve</button>
                         </form>
-                        <form method="POST" action="/admin/reject/{{ product.id }}">
+                        {% endif %}
+                        {% if product.status != 'rejected' %}
+                        <form method="POST" action="{{ url_for('reject_product', id=product.id) }}">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white">Reject</button>
+                            <button type="submit" class="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white">Reject</button>
+                        </form>
+                        {% endif %}
+                        <form method="POST" action="{{ url_for('delete_product', id=product.id) }}" onsubmit="return confirm('Delete this product?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white">Delete</button>
                         </form>
                     </div>
                 </div>
@@ -48,8 +60,8 @@
     </div>
     {% else %}
     <div class="rounded bg-white p-8 text-center shadow-sm">
-        <h2 class="text-xl font-bold">No pending products</h2>
-        <p class="mt-2 text-slate-600">All farmer uploads have been reviewed.</p>
+        <h2 class="text-xl font-bold">No products yet</h2>
+        <p class="mt-2 text-slate-600">Use "New Product" to add your first listing.</p>
     </div>
     {% endif %}
 </section>

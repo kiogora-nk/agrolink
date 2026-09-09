@@ -1,4 +1,4 @@
-# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+# File generated from our OpenAPI spec by Castiron. See CONTRIBUTING.md for details.
 
 from __future__ import annotations
 
@@ -23,13 +23,15 @@ class TranscriptionCreateParamsBase(TypedDict, total=False):
     file: Required[FileTypes]
     """
     The audio file object (not file name) to transcribe, in one of these formats:
-    flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, or webm.
+    flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, or webm. The request must include
+    enough format metadata for the file to be identified. We recommend an
+    extension-bearing filename and an appropriate content type.
     """
 
     model: Required[Union[str, AudioModel]]
     """ID of the model to use.
 
-    The options are `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`,
+    The options are `gpt-transcribe`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`,
     `gpt-4o-mini-transcribe-2025-12-15`, `whisper-1` (which is powered by our open
     source Whisper V2 model), and `gpt-4o-transcribe-diarize`.
     """
@@ -54,6 +56,12 @@ class TranscriptionCreateParamsBase(TypedDict, total=False):
     not supported when using `gpt-4o-transcribe-diarize`.
     """
 
+    keywords: SequenceNotStr[str]
+    """Words or phrases to guide transcription of the input audio.
+
+    Supported by `gpt-transcribe`.
+    """
+
     known_speaker_names: SequenceNotStr[str]
     """
     Optional list of speaker names that correspond to the audio samples provided in
@@ -76,6 +84,13 @@ class TranscriptionCreateParamsBase(TypedDict, total=False):
     Supplying the input language in
     [ISO-639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) (e.g. `en`)
     format will improve accuracy and latency.
+    """
+
+    languages: SequenceNotStr[str]
+    """
+    Possible languages of the input audio, in
+    [ISO-639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) format.
+    Supported by `gpt-transcribe`.
     """
 
     prompt: str

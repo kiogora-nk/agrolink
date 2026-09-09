@@ -14,7 +14,7 @@ with app.app_context():
         )
         db.session.add(farmer)
         db.session.commit()
-        print('✅ Farmer created')
+        print('[OK] Farmer created')
     
     products = [
         # Dragon Fruits
@@ -50,6 +50,6 @@ with app.app_context():
             count += 1
     
     db.session.commit()
-    print(f'✅ {count} products added successfully!')
+    print(f'[OK] {count} products added successfully!')
     print('Products: Dragon Fruits (Red, White, Yellow, Purple)')
     print('Seedlings: Avocado Hass, Fuerte, Pinkerton, Dragon Fruit')

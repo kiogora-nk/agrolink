@@ -5,9 +5,9 @@
 <div class="space-y-4">
     {% for inquiry in inquiries %}
     <div class="bg-white p-4 rounded shadow">
-        <div class="flex justify-between items-start">
+        <div class="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start">
             <div>
-                <p class="font-semibold">Product: <a href="{{ url_for('product_detail', id=inquiry.product_id) }}" class="text-green-600 underline">{{ inquiry.product.name }}</a></p>
+                <p class="font-semibold">Product: <a href="{{ url_for('product_detail', id=inquiry.product_id) }}" class="text-amber-700 underline">{{ inquiry.product.name }}</a></p>
                 <p class="text-sm text-gray-500">Sent: {{ inquiry.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
                 <p class="mt-2">Your message: {{ inquiry.message }}</p>
                 <p class="mt-1 text-sm">Status: 
@@ -16,7 +16,7 @@
                     </span>
                 </p>
                 {% if inquiry.replies %}
-                    <div class="mt-3 pl-4 border-l-2 border-green-200">
+                    <div class="mt-3 pl-4 border-l-2 border-amber-200">
                         <p class="text-sm font-semibold">Admin Reply:</p>
                         {% for reply in inquiry.replies %}
                             <p class="text-sm">{{ reply.reply }}</p>

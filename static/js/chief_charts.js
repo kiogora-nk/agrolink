@@ -18,7 +18,7 @@ async function loadChiefDashboard() {
     const signups = await signupsRes.json();
     new Chart(document.getElementById('signupChart'), {
         type: 'line',
-        data: { labels: signups.labels, datasets: [{ label: 'New Users', data: signups.data, borderColor: '#10b981' }] }
+        data: { labels: signups.labels, datasets: [{ label: 'New Users', data: signups.data, borderColor: '#f59e0b' }] }
     });
 
     // Revenue trend
@@ -26,7 +26,7 @@ async function loadChiefDashboard() {
     const rev = await revRes.json();
     new Chart(document.getElementById('revenueChart'), {
         type: 'bar',
-        data: { labels: rev.labels, datasets: [{ label: 'Revenue (KES)', data: rev.data, backgroundColor: '#059669' }] }
+        data: { labels: rev.labels, datasets: [{ label: 'Revenue (KES)', data: rev.data, backgroundColor: '#d97706' }] }
     });
 
     // Order status distribution
@@ -34,7 +34,7 @@ async function loadChiefDashboard() {
     const statusData = await statusRes.json();
     new Chart(document.getElementById('orderStatusChart'), {
         type: 'doughnut',
-        data: { labels: Object.keys(statusData), datasets: [{ data: Object.values(statusData), backgroundColor: ['#f59e0b','#10b981','#3b82f6','#ef4444'] }] }
+        data: { labels: Object.keys(statusData), datasets: [{ data: Object.values(statusData), backgroundColor: ['#f59e0b','#fbbf24','#3b82f6','#ef4444'] }] }
     });
 
     // Top products
@@ -53,7 +53,7 @@ async function loadChiefDashboard() {
     userDiv.innerHTML = '<ul class="space-y-2">';
     users.forEach(u => {
         userDiv.innerHTML += `<li class="flex justify-between items-center bg-gray-50 p-2 rounded">
-            <span>${u.username} (${u.role}) ${u.suspended ? '🔴' : '🟢'}</span>
+            <span>${u.username} (${u.role}) ${u.suspended ? '(Suspended)' : '(Active)'}</span>
             <div>
                 <button onclick="suspendUser(${u.id})" class="bg-red-100 px-2 py-1 text-xs rounded">${u.suspended ? 'Unsuspend' : 'Suspend'}</button>
                 <button onclick="changeRole(${u.id}, '${u.role}')" class="bg-blue-100 px-2 py-1 text-xs rounded">Change Role</button>

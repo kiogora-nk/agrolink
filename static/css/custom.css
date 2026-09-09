@@ -14,20 +14,17 @@
 :root {
     --market-yellow: #facc15;
     --market-amber: #f59e0b;
-    --market-green: #166534;
+    /* Brand clay tone (replaces the old dark green) */
+    --market-green: #92400e;
 }
 
 body {
-    background:
-        linear-gradient(180deg, rgba(254, 243, 199, 0.65), rgba(240, 253, 244, 0.9) 22rem),
-        #f0fdf4;
+    background: #fffbeb;
 }
 
 .market-hero {
     border: 1px solid #fde68a;
-    background:
-        linear-gradient(135deg, rgba(254, 249, 195, 0.95), rgba(255, 255, 255, 0.96)),
-        #fff;
+    background: #ffffff;
 }
 
 .product-card {

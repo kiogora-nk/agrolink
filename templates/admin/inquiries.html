@@ -13,7 +13,7 @@
                 <p class="mt-2">Message: {{ inquiry.message }}</p>
                 <p class="mt-1 text-sm">Status: <span class="font-semibold {% if inquiry.status == 'replied' %}text-green-600{% else %}text-red-600{% endif %}">{{ inquiry.status|capitalize }}</span></p>
             </div>
-            <a href="{{ url_for('admin_inquiry_chat', inquiry_id=inquiry.id) }}" class="bg-green-600 text-white px-4 py-2 rounded text-sm">Chat</a>
+            <a href="{{ url_for('admin_inquiry_chat', inquiry_id=inquiry.id) }}" class="bg-amber-600 text-white px-4 py-2 rounded text-sm">Chat</a>
         </div>
     </div>
     {% else %}

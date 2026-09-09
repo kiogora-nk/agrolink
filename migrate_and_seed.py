@@ -10,9 +10,9 @@ with app.app_context():
         print('Adding stock column to product table...')
         db.session.execute(text('ALTER TABLE product ADD COLUMN stock INTEGER DEFAULT 0'))
         db.session.commit()
-        print('✅ Stock column added!')
+        print('[OK] Stock column added!')
     else:
-        print('✅ Stock column already exists.')
+        print('[OK] Stock column already exists.')
     
     # Create farmer if not exists
     from app import User, Product
@@ -29,7 +29,7 @@ with app.app_context():
         )
         db.session.add(farmer)
         db.session.commit()
-        print('✅ Farmer created')
+        print('[OK] Farmer created')
     
     # Products to seed
     products = [
@@ -63,6 +63,6 @@ with app.app_context():
             count += 1
     
     db.session.commit()
-    print(f'✅ {count} products added successfully!')
+    print(f'[OK] {count} products added successfully!')
     print('Added: Dragon Fruits (Red, White, Yellow, Purple)')
     print('Added: Seedlings (Avocado Hass, Fuerte, Pinkerton, Dragon Fruit)')

@@ -4,24 +4,24 @@
 <h2 class="text-2xl font-bold mb-4">Your Cart</h2>
 <div id="cart-items">
     {% for cart_item, product in cart_items %}
-    <div class="bg-white p-4 rounded shadow mb-3 flex justify-between items-center" data-item-id="{{ cart_item.id }}">
+    <div class="bg-white p-4 rounded shadow mb-3 flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center" data-item-id="{{ cart_item.id }}">
         <div>
             <p class="font-bold">{{ product.name }}</p>
             <p>KES {{ "{:,.0f}".format(product.price) }} x <span class="item-qty">{{ cart_item.quantity }}</span> = <strong class="item-total">KES {{ "{:,.0f}".format(product.price * cart_item.quantity) }}</strong></p>
         </div>
-        <div>
+        <div class="flex items-center">
             <input type="number" min="1" value="{{ cart_item.quantity }}" class="qty-input w-16 border rounded px-2 py-1" data-id="{{ cart_item.id }}">
             <button class="remove-item bg-red-600 text-white px-3 py-1 rounded ml-2" data-id="{{ cart_item.id }}">Remove</button>
         </div>
     </div>
     {% else %}
-    <p class="text-gray-600">Your cart is empty. <a href="/marketplace" class="text-green-600 underline">Continue shopping</a></p>
+    <p class="text-gray-600">Your cart is empty. <a href="/marketplace" class="text-amber-700 underline">Continue shopping</a></p>
     {% endfor %}
 </div>
 {% if cart_items %}
-<div class="mt-4 text-right">
+<div class="mt-4 flex flex-col gap-2 sm:text-right sm:items-end">
     <p class="text-xl font-bold">Total: KES <span id="cart-total">{{ "{:,.0f}".format(total) }}</span></p>
-    <button id="checkout-btn" class="bg-green-700 text-white px-6 py-2 rounded mt-2">Checkout (Pay Later)</button>
+    <button id="checkout-btn" class="bg-amber-600 text-white px-6 py-2 rounded">Checkout (Pay Later)</button>
 </div>
 {% endif %}
 

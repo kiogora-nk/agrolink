@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Something went wrong{% endblock %}
+{% block content %}
+<div class="max-w-xl mx-auto text-center py-16">
+    <h1 class="text-6xl font-extrabold text-amber-800">Oops!</h1>
+    <h2 class="mt-4 text-2xl font-bold text-slate-900">Something went wrong on our side</h2>
+    <p class="mt-2 text-slate-600">
+        Don't worry - this isn't your fault. Our team has been notified automatically
+        and will fix it. Please try again in a moment.
+    </p>
+
+    {% if reference %}
+    <div class="mt-6 rounded-lg bg-slate-50 border border-slate-200 p-4">
+        <p class="text-sm text-slate-500">Reference code</p>
+        <p class="text-lg font-mono font-bold text-slate-800">{{ reference }}</p>
+        <p class="mt-1 text-xs text-slate-500">Quote this code if you contact us and we'll find it instantly.</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('report_issue', reference=reference) }}" class="mt-6 text-left">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="block text-sm font-semibold text-slate-700 mb-1">What were you trying to do? (optional)</label>
+        <textarea name="note" rows="3" class="w-full border rounded px-3 py-2"
+                  placeholder="e.g. I was placing an order for dragon fruit..."></textarea>
+        <button type="submit" class="mt-2 rounded bg-amber-600 px-5 py-2 font-semibold text-white hover:bg-amber-700">
+            Send this to the team
+        </button>
+    </form>
+    {% endif %}
+
+    <div class="mt-8 flex flex-wrap justify-center gap-3">
+        <a href="/" class="rounded bg-amber-600 px-6 py-3 font-semibold text-white hover:bg-amber-700">Back to Home</a>
+        {% if whatsapp_url and whatsapp_url != '#' %}
+        <a href="{{ whatsapp_url }}" target="_blank" rel="noopener" class="rounded border border-green-700 px-6 py-3 font-semibold text-green-800 hover:bg-green-50">Chat with us on WhatsApp</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,347 @@
+[
+  {
+    "crop": "dragon_fruit",
+    "disease": "Stem Canker",
+    "treatment": "Prune and burn infected stems well below the lesions. Disinfect tools between cuts. Apply a copper-based fungicide every 10-14 days and improve airflow by widening plant spacing. Avoid overhead irrigation.",
+    "symptoms": [
+      "sunken brown lesions on the stems that slowly enlarge",
+      "orange to reddish rusty spots spreading along the cladodes",
+      "cankers with raised scabby margins on the green stems",
+      "stem tissue turning corky and cracked with dark centers",
+      "small circular spots on stems that merge into large rotten patches",
+      "dry brown wounds girdling the stem causing dieback",
+      "rough scab like growths on the fleshy stems",
+      "lesions oozing then drying to a hard brown crust on stems"
+    ]
+  },
+  {
+    "crop": "dragon_fruit",
+    "disease": "Anthracnose",
+    "treatment": "Remove infected fruit and stems immediately. Spray with a copper or mancozeb fungicide at first sign and repeat after rain. Keep the canopy dry, harvest promptly, and store fruit in cool ventilated conditions.",
+    "symptoms": [
+      "dark sunken circular spots on the fruit with pink spore masses",
+      "black rotten patches on ripening fruit that spread quickly",
+      "reddish brown spots on stems with concentric rings",
+      "fruit rotting from the tip with soft darkened flesh",
+      "small water soaked spots turning into black lesions on fruit",
+      "spreading soft rot on fruit surface with orange ooze",
+      "lesions on cladodes with a target like pattern",
+      "postharvest fruit developing sunken decayed spots"
+    ]
+  },
+  {
+    "crop": "dragon_fruit",
+    "disease": "Bacterial Soft Rot",
+    "treatment": "Cut out and destroy mushy tissue, avoiding spread on tools. Reduce nitrogen, improve drainage, and stop overhead watering. Apply copper bactericide and protect plants from wounds and insect damage.",
+    "symptoms": [
+      "soft mushy watery rot at the base of the stem",
+      "foul smelling slimy decay of the fleshy tissue",
+      "stems collapsing into a wet yellow mush",
+      "rapid rotting with a bad odor after heavy rain",
+      "translucent water soaked areas turning to slime",
+      "yellowing then wet collapse of young cladodes",
+      "oozing bacterial slime from cracked stem tissue",
+      "plant base turning soft brown and falling over"
+    ]
+  },
+  {
+    "crop": "dragon_fruit",
+    "disease": "Healthy",
+    "treatment": "No disease detected. Maintain good spacing, balanced fertilizer, and proper drainage. Scout weekly and keep tools clean to prevent future problems.",
+    "symptoms": [
+      "firm green stems with no spots or lesions",
+      "healthy bright fruit with smooth skin",
+      "vigorous new growth and strong turgid cladodes",
+      "no discoloration wilting or rot anywhere on the plant",
+      "clean stems with normal color and firm texture",
+      "flowers and fruit developing normally without blemish",
+      "uniform green color with no soft or dry patches",
+      "plant looks vigorous with no signs of pests or disease"
+    ]
+  },
+  {
+    "crop": "avocado",
+    "disease": "Anthracnose",
+    "treatment": "Prune dead wood and remove fallen fruit and leaves. Apply copper fungicide before rains and at fruit set. Handle fruit gently at harvest and refrigerate promptly to slow decay.",
+    "symptoms": [
+      "dark sunken circular spots on the fruit skin",
+      "brown to black rot spreading on ripening avocado fruit",
+      "small dark leaf spots that enlarge with a yellow halo",
+      "fruit flesh browning under sunken skin lesions",
+      "black decayed patches on fruit after harvest",
+      "twig dieback with dark lesions on branches",
+      "leaf blotches turning necrotic and dropping",
+      "circular decay on fruit with pinkish spore masses"
+    ]
+  },
+  {
+    "crop": "avocado",
+    "disease": "Root Rot",
+    "treatment": "Improve drainage immediately and stop overwatering. Apply phosphonate (potassium phosphite) as a trunk injection or drench. Mulch to encourage feeder roots and avoid moving infested soil.",
+    "symptoms": [
+      "leaves wilting and yellowing despite moist soil",
+      "small pale sparse foliage and general decline",
+      "branch dieback starting from the top of the tree",
+      "blackened rotten feeder roots that are brittle",
+      "tree slowly declining with leaf drop and dieback",
+      "wilting canopy with undersized yellow leaves",
+      "roots dark mushy and decayed in waterlogged soil",
+      "poor fruit set and thinning canopy over seasons"
+    ]
+  },
+  {
+    "crop": "avocado",
+    "disease": "Cercospora Leaf Spot",
+    "treatment": "Collect and destroy fallen leaves. Apply a copper or strobilurin fungicide at early spotting and repeat per label. Improve air circulation and avoid wetting foliage during irrigation.",
+    "symptoms": [
+      "small angular brown spots scattered across the leaves",
+      "tiny dark leaf lesions with slightly raised edges",
+      "spots on leaves and fruit that crack the skin",
+      "brown flecks on foliage that merge in humid weather",
+      "leaf spots with a faint yellow border",
+      "irregular dark blotches on older leaves",
+      "fruit developing small corky cracked spots",
+      "numerous pinpoint brown spots on lower leaves"
+    ]
+  },
+  {
+    "crop": "avocado",
+    "disease": "Healthy",
+    "treatment": "No disease detected. Keep mulch over the root zone, water deeply but infrequently, and maintain balanced nutrition. Monitor for early leaf spots and root stress.",
+    "symptoms": [
+      "dark green glossy leaves with no spots",
+      "strong new flush of healthy foliage",
+      "firm well colored fruit developing normally",
+      "no wilting yellowing or dieback on the tree",
+      "vigorous canopy with dense green leaves",
+      "roots white and firm in well drained soil",
+      "uniform leaf color with no blotches or lesions",
+      "tree looks vigorous and productive"
+    ]
+  },
+  {
+    "crop": "tomato",
+    "disease": "Early Blight",
+    "treatment": "Remove and destroy infected lower leaves. Mulch to prevent soil splash, stake plants for airflow, and rotate crops. Apply chlorothalonil or mancozeb fungicide on a 7-10 day schedule.",
+    "symptoms": [
+      "dark brown spots with concentric rings like a target on lower leaves",
+      "yellowing leaves with bullseye shaped lesions",
+      "older leaves developing dark patches and dropping",
+      "concentric ring spots spreading upward from the base",
+      "brown leaf lesions with a yellow halo on lower foliage",
+      "stem lesions dark and sunken near the soil line",
+      "leaves browning and dying from the bottom of the plant up",
+      "target like spots on leaves and dark collar rot on stem"
+    ]
+  },
+  {
+    "crop": "tomato",
+    "disease": "Late Blight",
+    "treatment": "Act fast: remove and bag infected plants to stop spread. Apply protectant fungicide (chlorothalonil) or targeted late-blight products before wet weather. Avoid overhead watering and never compost infected material.",
+    "symptoms": [
+      "large greasy gray green blotches on leaves that turn brown",
+      "water soaked lesions with white fuzzy mold on leaf undersides",
+      "rapidly spreading dark rot on leaves and stems in cool wet weather",
+      "firm brown greasy patches on green fruit",
+      "whole plant collapsing quickly with a musty smell",
+      "dark stem lesions and blackened leaf margins",
+      "leaves rotting overnight after damp foggy conditions",
+      "brown fruit rot with a hard greasy surface"
+    ]
+  },
+  {
+    "crop": "tomato",
+    "disease": "Leaf Mold",
+    "treatment": "Increase ventilation and lower humidity, especially in greenhouses. Space and prune for airflow, avoid leaf wetness, and apply an appropriate fungicide. Use resistant varieties where available.",
+    "symptoms": [
+      "pale yellow spots on upper leaf surfaces",
+      "olive green to brown velvety mold on leaf undersides",
+      "yellow blotches above and fuzzy growth below the leaves",
+      "leaves curling and drying in humid greenhouse conditions",
+      "patches of gray brown fuzz under the foliage",
+      "upper leaf yellowing matched by mold underneath",
+      "older leaves yellowing then withering from mold",
+      "velvety spore layer coating the underside of leaves"
+    ]
+  },
+  {
+    "crop": "tomato",
+    "disease": "Bacterial Spot",
+    "treatment": "Use certified disease-free seed and transplants. Avoid working plants when wet, rotate crops, and apply copper sprays early. Remove severely infected plants to reduce inoculum.",
+    "symptoms": [
+      "small dark water soaked spots on leaves and fruit",
+      "tiny greasy spots that turn brown with a yellow ring",
+      "scabby raised spots on the fruit surface",
+      "numerous specks on leaves giving a shot hole look",
+      "leaf spots merging causing leaves to yellow and drop",
+      "dark angular lesions along leaf veins",
+      "fruit covered in rough dark cracked spots",
+      "spotting worse after warm rainy windy weather"
+    ]
+  },
+  {
+    "crop": "tomato",
+    "disease": "Mosaic Virus",
+    "treatment": "There is no cure: remove and destroy infected plants. Wash hands and tools, control aphids and whiteflies, and avoid tobacco use near plants. Plant resistant varieties next season.",
+    "symptoms": [
+      "mottled light and dark green mosaic pattern on leaves",
+      "leaves distorted curled and fern like",
+      "stunted plant with mottled crinkled foliage",
+      "yellow green marbling across the leaves",
+      "narrow strap like deformed new leaves",
+      "uneven ripening and internal browning of fruit",
+      "leaf blistering with a patchy mosaic discoloration",
+      "overall stunting with mosaic mottling and leaf curl"
+    ]
+  },
+  {
+    "crop": "tomato",
+    "disease": "Healthy",
+    "treatment": "No disease detected. Keep up crop rotation, mulching, staking, and even watering. Scout twice weekly for early spots and control insect vectors.",
+    "symptoms": [
+      "uniform green leaves with no spots or mottling",
+      "strong upright plant with healthy foliage",
+      "smooth evenly ripening fruit with no lesions",
+      "no wilting curling or discoloration on leaves",
+      "vigorous growth with dark green normal leaves",
+      "flowers setting fruit normally without deformity",
+      "clean stems and leaves free of mold or spots",
+      "plant looks healthy and productive"
+    ]
+  },
+  {
+    "crop": "maize",
+    "disease": "Gray Leaf Spot",
+    "treatment": "Rotate away from maize and bury residue to reduce inoculum. Plant resistant hybrids and improve airflow. Apply a foliar fungicide at early lesion stage if disease pressure is high.",
+    "symptoms": [
+      "long narrow rectangular gray to tan lesions between leaf veins",
+      "gray streaks running parallel along the leaf",
+      "rectangular lesions that grow together blighting the leaf",
+      "grayish brown lesions restricted by the leaf veins",
+      "lower leaves drying out with long gray spots",
+      "matchstick shaped lesions covering the foliage",
+      "leaves turning gray and dying from rectangular spots",
+      "narrow blocky lesions reducing green leaf area"
+    ]
+  },
+  {
+    "crop": "maize",
+    "disease": "Common Rust",
+    "treatment": "Plant resistant hybrids and scout early. Apply a foliar fungicide (triazole or strobilurin) when pustules first appear on young plants under cool moist conditions.",
+    "symptoms": [
+      "small reddish brown powdery pustules on both leaf surfaces",
+      "rust colored raised spots that rub off as powder",
+      "orange brown pustules scattered over the leaves",
+      "cinnamon colored spore masses bursting from the leaf",
+      "leaves flecked with reddish rusty bumps",
+      "powdery brown spots turning black as leaves mature",
+      "numerous rust pustules causing leaves to yellow",
+      "brick red powdery spots on upper and lower leaf sides"
+    ]
+  },
+  {
+    "crop": "maize",
+    "disease": "Northern Leaf Blight",
+    "treatment": "Use resistant hybrids, rotate crops, and till under infected debris. Apply fungicide from tasseling if lesions appear on the upper leaves during humid weather.",
+    "symptoms": [
+      "long cigar shaped gray green lesions on the leaves",
+      "large tan elliptical blotches that expand along the leaf",
+      "boat shaped lesions turning tan and papery",
+      "big drying lesions starting on the lower leaves",
+      "grayish elongated spots that merge and kill the leaf",
+      "canoe shaped tan lesions with dark borders",
+      "leaves blighting from large elongated gray patches",
+      "extensive leaf death from long tan lesions before harvest"
+    ]
+  },
+  {
+    "crop": "maize",
+    "disease": "Maize Streak Virus",
+    "treatment": "Remove infected plants and control leafhopper vectors. Plant early and use tolerant varieties. Avoid staggered planting that sustains leafhopper populations.",
+    "symptoms": [
+      "narrow broken yellow streaks running along the leaf veins",
+      "pale chlorotic stripes parallel to the leaf length",
+      "yellow and green striping with stunted growth",
+      "fine dotted streaks that merge into yellow bands",
+      "severely stunted plant with striped mottled leaves",
+      "chlorotic streaking and poor cob development",
+      "leaves showing continuous yellow lines from the base",
+      "stunting with pronounced yellow streaks after leafhopper attack"
+    ]
+  },
+  {
+    "crop": "maize",
+    "disease": "Healthy",
+    "treatment": "No disease detected. Maintain crop rotation, balanced fertilizer, and weed and insect control. Scout regularly for early lesions and vector pests.",
+    "symptoms": [
+      "broad green leaves with no lesions or streaks",
+      "uniform healthy foliage from base to tassel",
+      "strong stalks and well filled cobs",
+      "no rust spots streaks or blight on the leaves",
+      "vigorous green plants with normal growth",
+      "leaves clean and green without discoloration",
+      "even stand of healthy plants with good vigor",
+      "no yellowing striping or drying of foliage"
+    ]
+  },
+  {
+    "crop": "general",
+    "disease": "Powdery Mildew",
+    "treatment": "Improve air circulation and avoid excess nitrogen. Remove affected leaves and apply sulfur, potassium bicarbonate, or a suitable fungicide. Water at the base to keep foliage dry.",
+    "symptoms": [
+      "white powdery coating on the upper leaf surfaces",
+      "dusty white patches spreading over leaves and stems",
+      "leaves covered in a flour like white growth",
+      "white fungal film causing leaves to yellow and curl",
+      "powdery white spots merging across the foliage",
+      "distorted new growth dusted with white powder",
+      "white mildew on leaves that later turn brown",
+      "chalky white coating on buds and young shoots"
+    ]
+  },
+  {
+    "crop": "general",
+    "disease": "Aphid Infestation",
+    "treatment": "Blast off colonies with water, encourage ladybugs and lacewings, and apply insecticidal soap or neem oil. Control ants that farm aphids and remove heavily infested shoots.",
+    "symptoms": [
+      "clusters of tiny green or black insects on new shoots",
+      "sticky honeydew coating leaves with sooty black mold",
+      "curled distorted young leaves swarming with small bugs",
+      "stunted growth with ants running along the stems",
+      "soft bodied insects massed under the leaves",
+      "shiny sticky residue on leaves attracting ants",
+      "wilting new growth crowded with tiny pests",
+      "yellowing curling leaves from sap sucking insects"
+    ]
+  },
+  {
+    "crop": "general",
+    "disease": "Nutrient Deficiency",
+    "treatment": "Test the soil and correct pH. Apply a balanced fertilizer and target the specific shortfall (nitrogen, potassium, magnesium, or iron). Mulch and maintain even moisture for nutrient uptake.",
+    "symptoms": [
+      "older leaves turning uniformly pale yellow",
+      "yellowing between the veins while veins stay green",
+      "purple or reddish tint on the leaves and stems",
+      "scorched dry edges on older leaves",
+      "stunted growth with overall pale foliage",
+      "new leaves pale yellow with green veins",
+      "weak spindly growth and poor color",
+      "leaf margins browning with general yellowing"
+    ]
+  },
+  {
+    "crop": "general",
+    "disease": "Healthy",
+    "treatment": "No disease detected. Continue balanced feeding, proper watering, and routine scouting. Keep the area weed free and monitor for early signs of pests or disease.",
+    "symptoms": [
+      "uniform green leaves with no spots or pests",
+      "vigorous balanced growth throughout the plant",
+      "no yellowing curling wilting or mold",
+      "clean foliage free of insects and lesions",
+      "strong healthy stems and normal leaf color",
+      "plant developing normally with no blemishes",
+      "no powder streaks or sticky residue on leaves",
+      "overall healthy vigorous appearance"
+    ]
+  }
+]

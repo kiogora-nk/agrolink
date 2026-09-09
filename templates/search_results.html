@@ -5,7 +5,7 @@
     <div class="rounded bg-white p-6 shadow-sm">
         <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-                <p class="text-sm font-semibold uppercase tracking-wide text-green-700">Search Results</p>
+                <p class="text-sm font-semibold uppercase tracking-wide text-amber-700">Search Results</p>
                 <h1 class="text-3xl font-bold text-slate-900">
                     {% if query %}Results for "{{ query }}"{% else %}All Products{% endif %}
                 </h1>
@@ -30,7 +30,7 @@
                     <option value="price_desc" {% if sort == 'price_desc' %}selected{% endif %}>Price: High to Low</option>
                     <option value="rating" {% if sort == 'rating' %}selected{% endif %}>Top Rated</option>
                 </select>
-                <button type="submit" class="rounded bg-green-700 px-4 py-2 font-semibold text-white">Filter</button>
+                <button type="submit" class="rounded bg-amber-600 px-4 py-2 font-semibold text-white">Filter</button>
                 <a href="/search" class="rounded bg-gray-300 px-4 py-2 text-slate-700">Reset</a>
             </form>
         </div>
@@ -55,8 +55,8 @@
                 <p class="mt-1 text-sm text-slate-500">{{ product.category or 'Produce' }}</p>
                 <p class="line-clamp-2 mt-2 text-sm text-slate-600">{{ product.description }}</p>
                 <div class="mt-4 flex items-center justify-between">
-                    <p class="font-bold text-green-800">KES {{ "{:,.0f}".format(product.price or 0) }}</p>
-                    <a href="/product/{{ product.id }}" class="rounded bg-green-700 px-3 py-2 text-sm font-semibold text-white">Details</a>
+                    <p class="font-bold text-amber-800">KES {{ "{:,.0f}".format(product.price or 0) }}</p>
+                    <a href="/product/{{ product.id }}" class="rounded bg-amber-600 px-3 py-2 text-sm font-semibold text-white">Details</a>
                 </div>
             </div>
         </article>
@@ -76,7 +76,7 @@
     <div class="rounded bg-white p-8 text-center shadow-sm">
         <h2 class="text-xl font-bold">No products found</h2>
         <p class="mt-2 text-slate-600">Try adjusting your search or filter criteria.</p>
-        <a href="/marketplace" class="mt-4 inline-block rounded bg-green-700 px-4 py-2 text-white">Browse Marketplace</a>
+        <a href="/marketplace" class="mt-4 inline-block rounded bg-amber-600 px-4 py-2 text-white">Browse Marketplace</a>
     </div>
     {% endif %}
 </section>

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Reply to Message{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-4 flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-slate-900">Reply to Message</h1>
+        <a href="{{ url_for('admin_messages') }}" class="rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-800">Back to Messages</a>
+    </div>
+
+    <div class="rounded bg-white p-6 shadow-sm">
+        <div class="border-b border-slate-200 pb-4">
+            <p class="text-sm text-slate-500">From</p>
+            <p class="font-semibold text-slate-900">{{ message.name }} &lt;{{ message.email }}&gt;</p>
+            {% if message.phone %}<p class="text-sm text-slate-600">{{ message.phone }}</p>{% endif %}
+            <p class="mt-2 text-sm text-slate-500">Subject</p>
+            <p class="font-semibold text-slate-900">{{ message.subject or 'General Inquiry' }}</p>
+            <p class="mt-2 text-sm text-slate-500">Message</p>
+            <p class="text-slate-700">{{ message.message }}</p>
+            <p class="mt-2 text-xs text-slate-400">{{ message.created_at.strftime('%b %d, %Y %H:%M') }}</p>
+        </div>
+
+        {% if message.replied %}
+        <div class="mt-4 rounded bg-green-50 p-4">
+            <p class="text-sm font-semibold text-green-800">Already replied</p>
+            <p class="text-slate-700">{{ message.reply_message }}</p>
+        </div>
+        {% endif %}
+
+        <form method="POST" class="mt-4 space-y-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="block text-sm font-medium text-slate-700">Your Reply</label>
+            <textarea name="reply" rows="5" required class="w-full rounded border p-3 focus:ring-2 focus:ring-amber-500">{{ message.reply_message or '' }}</textarea>
+            <button type="submit" class="rounded bg-amber-600 px-6 py-2 font-semibold text-white hover:bg-amber-700">Send Reply</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -13,9 +13,9 @@
             </div>
         </div>
         <div>
-            <p class="text-sm font-semibold uppercase tracking-wide text-green-700">{{ product.category or 'Produce' }}</p>
+            <p class="text-sm font-semibold uppercase tracking-wide text-amber-700">{{ product.category or 'Produce' }}</p>
             <h1 class="mt-1 text-3xl font-bold text-slate-900">{{ product.name }}</h1>
-            <p class="mt-3 text-3xl font-extrabold text-green-800" id="display-price" data-price-ksh="{{ product.price or 0 }}">KSH {{ "{:,.0f}".format(product.price or 0) }}</p>
+            <p class="mt-3 text-3xl font-extrabold text-amber-800" id="display-price" data-price-ksh="{{ product.price or 0 }}">KSH {{ "{:,.0f}".format(product.price or 0) }}</p>
             <p class="mt-4 text-slate-700">{{ product.description }}</p>
             <p class="mt-3 text-sm text-slate-500">Organic: {{ 'Yes' if product.organic else 'No' }}</p>
 
@@ -48,13 +48,13 @@
                     <option value="stripe_card" data-currency="USD">ðŸ’³Visa/Mastercard - USD</option>
                     <option value="binance_pay" data-currency="USD">ðŸŸ¡Binance Pay - USD</option>
                 </select>
-                <button id="orderNowBtn" data-product-id="{{ product.id }}" class="mt-4 w-full rounded bg-green-700 px-5 py-3 font-bold text-white">Order Now and Pay</button>
+                <button id="orderNowBtn" data-product-id="{{ product.id }}" class="mt-4 w-full rounded bg-amber-600 px-5 py-3 font-bold text-white">Order Now and Pay</button>
                 <div id="payment-result" class="mt-4 hidden rounded border p-3 text-sm"></div>
             </div>
             
             <a href="{{ url_for('product_inquiry', product_id=product.id) }}" class="block mt-3 text-center bg-amber-600 text-white px-4 py-2 rounded">ðŸ“§ Ask Admin About This Product</a>
             {% else %}
-            <a href="/login" class="mt-6 inline-block rounded bg-green-700 px-6 py-3 font-bold text-white">Login to Order or Ask Admin</a>
+            <a href="/login" class="mt-6 inline-block rounded bg-amber-600 px-6 py-3 font-bold text-white">Login to Order or Ask Admin</a>
             {% endif %}
         </div>
     </div>
@@ -66,7 +66,7 @@
             {% for item in recommendations %}
             <a href="/product/{{ item.id }}" class="rounded bg-white p-3 shadow-sm">
                 <p class="font-semibold">{{ item.name }}</p>
-                <p class="text-sm text-green-800">KES {{ "{:,.0f}".format(item.price or 0) }}</p>
+                <p class="text-sm text-amber-800">KES {{ "{:,.0f}".format(item.price or 0) }}</p>
             </a>
             {% endfor %}
         </div>

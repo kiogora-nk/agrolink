@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if product else 'New' }} Product{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-4 flex items-center justify-between">
+        <h1 class="text-2xl font-bold text-slate-900">{{ 'Edit Product' if product else 'New Product' }}</h1>
+        <a href="{{ url_for('admin_products') }}" class="rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-800">Back to Products</a>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" class="space-y-4 rounded bg-white p-6 shadow-sm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700">Product Name</label>
+            <input name="name" required value="{{ product.name if product else '' }}" class="w-full rounded border p-2 focus:ring-2 focus:ring-amber-500">
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700">Description</label>
+            <textarea name="description" rows="3" class="w-full rounded border p-2 focus:ring-2 focus:ring-amber-500">{{ product.description if product else '' }}</textarea>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Price (KES)</label>
+                <input name="price" type="number" step="0.01" min="0" required value="{{ product.price if product else '' }}" class="w-full rounded border p-2 focus:ring-2 focus:ring-amber-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Stock</label>
+                <input name="stock" type="number" min="0" value="{{ product.stock if product else 0 }}" class="w-full rounded border p-2 focus:ring-2 focus:ring-amber-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">Category</label>
+                <select name="category" class="w-full rounded border p-2 focus:ring-2 focus:ring-amber-500">
+                    {% for c in categories %}
+                    <option value="{{ c }}" {% if product and product.category == c %}selected{% endif %}>{{ c|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700">Sub-category (optional)</label>
+            <input name="sub_category" value="{{ product.sub_category if product and product.sub_category else '' }}" class="w-full rounded border p-2 focus:ring-2 focus:ring-amber-500" placeholder="e.g. Dragon Fruit, Avocado">
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700">Image upload</label>
+            <input type="file" name="image" accept="image/*" class="w-full rounded border p-2">
+            {% if product and product.image %}
+            <p class="mt-1 text-xs text-slate-500">Current: <a href="{{ product.image }}" class="text-amber-700 underline" target="_blank">view image</a></p>
+            {% endif %}
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700">or Image URL</label>
+            <input name="image_url" value="{{ product.image if product and product.image and product.image.startswith('http') else '' }}" class="w-full rounded border p-2 focus:ring-2 focus:ring-amber-500" placeholder="https://...">
+        </div>
+
+        <div class="flex flex-wrap items-center gap-6">
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="organic" {% if product and product.organic %}checked{% endif %}> Organic
+            </label>
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="featured" {% if product and product.featured %}checked{% endif %}> Featured on homepage
+            </label>
+            <div class="flex items-center gap-2 text-sm text-slate-700">
+                <span>Status</span>
+                <select name="status" class="rounded border p-1">
+                    {% for s in ['approved', 'pending', 'rejected'] %}
+                    <option value="{{ s }}" {% if (product and product.status == s) or (not product and s == 'approved') %}selected{% endif %}>{{ s|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <button type="submit" class="rounded bg-amber-600 px-6 py-3 font-semibold text-white hover:bg-amber-700">
+            {{ 'Save Changes' if product else 'Create Product' }}
+        </button>
+    </form>
+</div>
+{% endblock %}

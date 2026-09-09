@@ -1,25 +1,29 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}My Orders{% endblock %}
 {% block content %}
 <h2 class="text-2xl font-bold mb-4">My Orders</h2>
 <div class="space-y-4">
     {% for order in orders %}
     <div class="bg-white p-4 rounded shadow">
-        <div class="flex justify-between items-start">
+        <div class="flex flex-wrap justify-between items-start gap-3">
             <div>
-                <p class="font-bold">Order #{{ order.id }}</p>
-                <p class="text-sm text-gray-600">Product ID: {{ order.product_id }} | Quantity: {{ order.quantity }}</p>
-                <p class="text-lg font-semibold text-green-800">KES {{ "{:,.0f}".format(order.total_price) }}</p>
-                <p class="text-sm">Status: <span class="font-semibold">{{ order.status }}</span></p>
-                <p class="text-xs text-gray-500">{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                <p class="font-bold">Order #{{ order.id }}{% if order.receipt_number %} &middot; {{ order.receipt_number }}{% endif %}</p>
+                <p class="text-sm text-gray-600">
+                    <a href="{{ url_for('product_detail', id=order.product_id) }}" class="text-amber-700 hover:underline">{{ order.product.name if order.product else 'Product #' ~ order.product_id }}</a>
+                    &middot; Quantity: {{ order.quantity }}
+                </p>
+                <p class="text-lg font-semibold text-amber-700">KES {{ "{:,.0f}".format(order.total_price or 0) }}</p>
+                <p class="text-sm">Status: <span class="font-semibold capitalize">{{ order.status }}</span></p>
+                <p class="text-xs text-gray-500">{{ order.created_at.strftime('%Y-%m-%d %H:%M') if order.created_at else '' }}</p>
             </div>
-            {% if order.status == 'pending_payment' %}
-            <a href="/product/{{ order.product_id }}" class="bg-green-600 text-white px-3 py-1 rounded text-sm">Pay Now</a>
-            {% endif %}
+            <div class="flex flex-col gap-2">
+                <a href="{{ url_for('view_receipt', id=order.id) }}" class="border border-slate-300 text-slate-700 px-3 py-1 rounded text-sm text-center hover:bg-slate-50">View Receipt</a>
+                <a href="{{ url_for('download_receipt', id=order.id) }}" class="bg-amber-600 text-white px-3 py-1 rounded text-sm text-center hover:bg-amber-700">Download PDF</a>
+            </div>
         </div>
     </div>
     {% else %}
-    <p class="text-gray-600">No orders yet. <a href="/marketplace" class="text-green-600 underline">Shop now</a></p>
+    <p class="text-gray-600">No orders yet. <a href="{{ url_for('products') }}" class="text-amber-700 underline">Shop now</a></p>
     {% endfor %}
 </div>
 {% endblock %}

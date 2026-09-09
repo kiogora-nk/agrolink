@@ -1,49 +1,218 @@
-﻿{% extends "base.html" %}
-{% block title %}Admin Dashboard - BioFarm Fruits{% endblock %}
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
 {% block content %}
-<h1 class="text-3xl font-bold mb-6">Admin Dashboard</h1>
+<section class="space-y-6">
+    <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <h1 class="text-3xl font-bold text-slate-900">Admin Dashboard</h1>
+        {% if current_user.is_chief_admin() %}
+        <a href="{{ url_for('chief_admin_dashboard') }}" class="rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-800">Chief Admin Control Center</a>
+        {% endif %}
+    </div>
 
-<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-    <div class="bg-white p-6 rounded shadow text-center">
-        <h3 class="font-bold text-gray-600">Total Products</h3>
-        <p class="text-3xl font-bold text-green-600">{{ stats.products or 0 }}</p>
+    <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {% set tiles = [
+            ('Products', stats.products, url_for('admin_products')),
+            ('Pending', stats.pending_products, url_for('admin_products')),
+            ('Orders', stats.orders, url_for('admin_orders')),
+            ('Users', stats.users, url_for('admin_users')),
+            ('Unread messages', stats.messages, url_for('admin_messages')),
+            ('Training requests', stats.training, url_for('admin_training')),
+            ('Blog posts', stats.posts, url_for('admin_blog')),
+            ('Reviews', stats.reviews, None),
+            ('Open errors', stats.open_errors, url_for('admin_errors')),
+        ] %}
+        {% for label, value, link in tiles %}
+        <div class="rounded bg-white p-5 shadow-sm {% if label == 'Open errors' and value %}ring-2 ring-red-300{% endif %}">
+            <p class="text-sm text-slate-500">{{ label }}</p>
+            <p class="mt-1 text-2xl font-bold {% if label == 'Open errors' and value %}text-red-600{% else %}text-amber-700{% endif %}">{{ value or 0 }}</p>
+            {% if link %}<a href="{{ link }}" class="text-xs text-amber-700 underline">View</a>{% endif %}
+        </div>
+        {% endfor %}
     </div>
-    <div class="bg-white p-6 rounded shadow text-center">
-        <h3 class="font-bold text-gray-600">Training Requests</h3>
-        <p class="text-3xl font-bold text-blue-600">{{ stats.training_sessions or 0 }}</p>
-        <a href="/admin/training" class="text-sm text-blue-600 hover:underline">View all</a>
-    </div>
-    <div class="bg-white p-6 rounded shadow text-center">
-        <h3 class="font-bold text-gray-600">Contact Messages</h3>
-        <p class="text-3xl font-bold text-yellow-600">{{ stats.messages or 0 }}</p>
-        <a href="/admin/messages" class="text-sm text-yellow-600 hover:underline">View all</a>
-    </div>
-</div>
 
-<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-    <div class="bg-white p-6 rounded shadow">
-        <h2 class="text-xl font-bold mb-4">Quick Actions</h2>
-        <div class="space-y-3">
-            <a href="/admin/training" class="block bg-blue-50 px-4 py-2 rounded hover:bg-blue-100">
-                📋 View Training Requests
-            </a>
-            <a href="/admin/messages" class="block bg-yellow-50 px-4 py-2 rounded hover:bg-yellow-100">
-                ✉️ View Contact Messages
-            </a>
-            <a href="/products" class="block bg-green-50 px-4 py-2 rounded hover:bg-green-100">
-                🛒 View Products
-            </a>
+    <div class="rounded bg-white p-6 shadow-sm">
+        <h2 class="mb-4 text-xl font-bold text-slate-900">Quick Actions</h2>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <a href="{{ url_for('admin_product_new') }}" class="rounded border border-slate-200 px-4 py-3 font-semibold text-slate-800 hover:bg-slate-50">Add Product</a>
+            <a href="{{ url_for('admin_orders') }}" class="rounded border border-slate-200 px-4 py-3 font-semibold text-slate-800 hover:bg-slate-50">Manage Orders</a>
+            <a href="{{ url_for('admin_cms') }}" class="rounded border border-slate-200 px-4 py-3 font-semibold text-slate-800 hover:bg-slate-50">Edit Site Content</a>
+            <a href="{{ url_for('admin_blog') }}" class="rounded border border-slate-200 px-4 py-3 font-semibold text-slate-800 hover:bg-slate-50">Manage Blog</a>
+            <a href="{{ url_for('admin_messages') }}" class="rounded border border-slate-200 px-4 py-3 font-semibold text-slate-800 hover:bg-slate-50">Messages</a>
+            <a href="{{ url_for('send_notification') }}" class="rounded border border-slate-200 px-4 py-3 font-semibold text-slate-800 hover:bg-slate-50">Send Notification</a>
+            <a href="{{ url_for('admin_users') }}" class="rounded border border-slate-200 px-4 py-3 font-semibold text-slate-800 hover:bg-slate-50">Users</a>
+            <a href="{{ url_for('admin_errors') }}" class="rounded border border-slate-200 px-4 py-3 font-semibold text-slate-800 hover:bg-slate-50">Error Console</a>
+            <a href="{{ url_for('admin_reset_requests') }}" class="rounded border border-slate-200 px-4 py-3 font-semibold text-slate-800 hover:bg-slate-50">Reset Requests{% if stats.reset_requests %} ({{ stats.reset_requests }}){% endif %}</a>
+            {% if current_user.is_chief_admin() %}
+            <a href="{{ url_for('create_admin') }}" class="rounded border border-amber-300 bg-amber-50 px-4 py-3 font-semibold text-amber-800 hover:bg-amber-100">Create Admin</a>
+            {% endif %}
         </div>
     </div>
-    
-    <div class="bg-white p-6 rounded shadow">
-        <h2 class="text-xl font-bold mb-4">Contact Info</h2>
-        <div class="space-y-3">
-            <p><strong>Phone:</strong> <a href="tel:+254716091772" class="text-green-600 hover:underline">+254 716 091 772</a></p>
-            <p><strong>WhatsApp:</strong> <a href="https://wa.me/254716091772" class="text-green-600 hover:underline">Chat Now</a></p>
-            <p><strong>Email:</strong> <a href="mailto:info@biofarmfruits.co.ke" class="text-green-600 hover:underline">info@biofarmfruits.co.ke</a></p>
+
+    <div class="rounded bg-white p-6 shadow-sm">
+        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 class="text-xl font-bold text-slate-900">
+                Orders
+                {% if order_counts.pending %}
+                <span class="ml-2 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">{{ order_counts.pending }} pending</span>
+                {% endif %}
+            </h2>
+            <a href="{{ url_for('admin_orders') }}" class="text-sm font-semibold text-amber-700 underline">Manage all orders</a>
         </div>
+        {% if recent_orders %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="border-b border-slate-200 text-slate-500">
+                    <tr>
+                        <th class="p-3">Receipt</th>
+                        <th class="p-3">Customer</th>
+                        <th class="p-3">Product</th>
+                        <th class="p-3">Qty</th>
+                        <th class="p-3">Total</th>
+                        <th class="p-3">Delivery to</th>
+                        <th class="p-3">Status</th>
+                        <th class="p-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in recent_orders %}
+                    <tr class="border-b border-slate-100 align-top">
+                        <td class="p-3 font-mono text-xs">{{ order.receipt_number or order.id }}</td>
+                        <td class="p-3">
+                            <div class="font-semibold text-slate-900">{{ order.user.username if order.user else 'User' }}</div>
+                            <div class="text-xs text-slate-500">{{ order.delivery_phone or (order.user.phone if order.user else None) or '-' }}</div>
+                            {% if order.user and order.user.email %}
+                            <a href="mailto:{{ order.user.email }}" class="text-xs text-amber-700 underline">{{ order.user.email }}</a>
+                            {% endif %}
+                        </td>
+                        <td class="p-3 text-slate-600">{{ order.product.name if order.product else 'Product' }}</td>
+                        <td class="p-3">{{ order.quantity }}</td>
+                        <td class="p-3">KES {{ "{:,.0f}".format(order.total_price or 0) }}</td>
+                        <td class="p-3 text-xs text-slate-600">
+                            {% if order.delivery_address %}
+                            <span title="{{ order.delivery_address }}">{{ order.delivery_address|truncate(40) }}</span>
+                            {% else %}
+                            <span class="text-slate-400">Not provided</span>
+                            {% endif %}
+                        </td>
+                        <td class="p-3">
+                            <span class="rounded px-2 py-1 text-xs font-semibold
+                                {% if order.status == 'delivered' %}bg-green-100 text-green-800
+                                {% elif order.status == 'cancelled' %}bg-red-100 text-red-800
+                                {% elif order.status == 'confirmed' %}bg-blue-100 text-blue-800
+                                {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                                {{ order.status }}
+                            </span>
+                        </td>
+                        <td class="p-3">
+                            <div class="flex flex-wrap items-center justify-end gap-2">
+                                <form method="POST" action="{{ url_for('update_order_status', id=order.id) }}" class="flex items-center gap-1">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <select name="status" class="rounded border p-1 text-xs">
+                                        {% for s in ['pending', 'confirmed', 'delivered', 'cancelled'] %}
+                                        <option value="{{ s }}" {% if order.status == s %}selected{% endif %}>{{ s }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <button type="submit" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Update</button>
+                                </form>
+                                {% set wa = wa_link(order.delivery_phone or (order.user.phone if order.user else None)) %}
+                                {% if wa %}
+                                <a href="{{ wa }}" target="_blank" rel="noopener" class="rounded bg-green-500 px-3 py-1 text-xs font-semibold text-white">WhatsApp</a>
+                                {% endif %}
+                                <a href="{{ url_for('view_receipt', id=order.id) }}" class="rounded border px-3 py-1 text-xs font-semibold text-slate-700">Receipt</a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-slate-500">No orders yet.</p>
+        {% endif %}
     </div>
-</div>
+
+    <div class="rounded bg-white p-6 shadow-sm">
+        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 class="text-xl font-bold text-slate-900">
+                Training Requests
+                {% if training_counts.pending %}
+                <span class="ml-2 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">{{ training_counts.pending }} pending</span>
+                {% endif %}
+            </h2>
+            <a href="{{ url_for('admin_training') }}" class="text-sm font-semibold text-amber-700 underline">Manage all training requests</a>
+        </div>
+        {% if recent_training %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="border-b border-slate-200 text-slate-500">
+                    <tr>
+                        <th class="p-3">Name</th>
+                        <th class="p-3">Phone</th>
+                        <th class="p-3">Type</th>
+                        <th class="p-3">Preferred</th>
+                        <th class="p-3">Status</th>
+                        <th class="p-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for session in recent_training %}
+                    <tr class="border-b border-slate-100">
+                        <td class="p-3 font-semibold text-slate-900">{{ session.name }}</td>
+                        <td class="p-3 text-slate-600">{{ session.phone }}</td>
+                        <td class="p-3 text-slate-600">{{ session.session_type }}</td>
+                        <td class="p-3 text-slate-500">
+                            {{ session.preferred_date.strftime('%b %d, %Y') if session.preferred_date else '-' }}
+                            {% if session.preferred_time %} · {{ session.preferred_time }}{% endif %}
+                        </td>
+                        <td class="p-3">
+                            <span class="rounded px-2 py-1 text-xs font-semibold
+                                {% if session.status == 'pending' %}bg-yellow-100 text-yellow-800
+                                {% elif session.status == 'confirmed' %}bg-green-100 text-green-800
+                                {% else %}bg-gray-100 text-gray-800{% endif %}">
+                                {{ session.status }}
+                            </span>
+                        </td>
+                        <td class="p-3">
+                            <form method="POST" action="/admin/training/{{ session.id }}/update" class="flex items-center justify-end gap-1">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <select name="status" class="rounded border p-1 text-xs">
+                                    <option value="pending" {% if session.status == 'pending' %}selected{% endif %}>pending</option>
+                                    <option value="confirmed" {% if session.status == 'confirmed' %}selected{% endif %}>confirmed</option>
+                                    <option value="completed" {% if session.status == 'completed' %}selected{% endif %}>completed</option>
+                                </select>
+                                <button type="submit" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Update</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-slate-500">No training requests yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="rounded bg-white p-6 shadow-sm">
+        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 class="text-xl font-bold text-slate-900">Messages &amp; Notifications</h2>
+            <a href="{{ url_for('admin_messages') }}" class="text-sm font-semibold text-amber-700 underline">View all messages</a>
+        </div>
+        {% if messages %}
+        <div class="space-y-3 text-sm">
+            {% for m in messages %}
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                <div>
+                    <p class="font-semibold text-slate-900">{{ m.name }}</p>
+                    <p class="text-slate-500">{{ m.subject or 'General Inquiry' }}</p>
+                </div>
+                <a href="{{ url_for('reply_message', id=m.id) }}" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Reply</a>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-slate-500">No messages yet.</p>
+        {% endif %}
+    </div>
+</section>
 {% endblock %}
-

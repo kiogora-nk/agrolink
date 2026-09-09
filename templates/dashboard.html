@@ -2,13 +2,52 @@
 {% block title %}Dashboard - BioFarm Fruits{% endblock %}
 {% block content %}
 <div class="max-w-6xl mx-auto">
-    <h1 class="text-3xl font-bold mb-6">📊 Dashboard</h1>
-    <p class="text-gray-600 mb-6">Welcome back, {{ current_user.username }}!</p>
-    
+    <div class="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center">
+        <div class="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-amber-300 bg-amber-100 flex items-center justify-center">
+            {% if current_user.avatar %}
+            <img src="{{ current_user.avatar }}" alt="{{ current_user.username }}" class="h-full w-full object-cover">
+            {% else %}
+            <span class="text-2xl font-bold text-amber-800">{{ current_user.username[0].upper() }}</span>
+            {% endif %}
+        </div>
+        <div>
+            <h1 class="text-3xl font-bold">Dashboard</h1>
+            <p class="text-gray-600">Welcome back, {{ current_user.username }}!</p>
+        </div>
+    </div>
+
+    {% if my_open_issues %}
+    <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
+        <h3 class="font-bold text-amber-900">We're looking into your reported issue{{ 's' if my_open_issues|length > 1 else '' }}</h3>
+        <p class="text-sm text-amber-800 mt-1">Our team has been notified and is working on {{ 'these' if my_open_issues|length > 1 else 'this' }}. You'll get a notification here once resolved.</p>
+        <ul class="mt-2 space-y-1 text-sm text-amber-800">
+            {% for issue in my_open_issues %}
+            <li>· <span class="font-mono font-semibold">{{ issue.reference }}</span> — reported {{ issue.created_at.strftime('%b %d, %Y') if issue.created_at else '' }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if alerts %}
+    <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
+        <div class="flex items-center justify-between">
+            <h3 class="font-bold text-amber-900">Notifications</h3>
+            <a href="{{ url_for('notifications_page') }}" class="text-sm text-amber-700 underline">View all</a>
+        </div>
+        <ul class="mt-2 space-y-2">
+            {% for n in alerts %}
+            <li class="text-sm text-amber-900">
+                {% if n.title %}<span class="font-semibold">{{ n.title }}:</span> {% endif %}{{ n.message }}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
     <!-- Stats Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div class="bg-white p-4 rounded shadow text-center">
-            <div class="text-2xl font-bold text-green-600">{{ stats.orders }}</div>
+            <div class="text-2xl font-bold text-amber-700">{{ stats.orders }}</div>
             <div class="text-sm text-gray-600">Orders</div>
         </div>
         <div class="bg-white p-4 rounded shadow text-center">
@@ -26,18 +65,22 @@
     </div>
     
     <!-- Quick Actions -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <a href="/products" class="bg-green-100 p-4 rounded shadow text-center hover:bg-green-200 transition">
-            <div class="text-3xl mb-2">🛒</div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <a href="/products" class="bg-amber-100 p-4 rounded shadow text-center hover:bg-amber-200 transition">
+            <div class="text-3xl mb-2"></div>
             <div class="font-bold">Browse Products</div>
         </a>
         <a href="/my-orders" class="bg-blue-100 p-4 rounded shadow text-center hover:bg-blue-200 transition">
-            <div class="text-3xl mb-2">📦</div>
+            <div class="text-3xl mb-2"></div>
             <div class="font-bold">My Orders</div>
         </a>
         <a href="/profile" class="bg-yellow-100 p-4 rounded shadow text-center hover:bg-yellow-200 transition">
-            <div class="text-3xl mb-2">👤</div>
+            <div class="text-3xl mb-2"></div>
             <div class="font-bold">Edit Profile</div>
+        </a>
+        <a href="/profile#change-password" class="bg-green-100 p-4 rounded shadow text-center hover:bg-green-200 transition">
+            <div class="text-3xl mb-2"></div>
+            <div class="font-bold">Change Password</div>
         </a>
     </div>
     
@@ -69,7 +112,7 @@
             {% endfor %}
         </div>
         {% else %}
-        <p class="text-gray-500">No orders yet. <a href="/products" class="text-green-600 underline">Start shopping!</a></p>
+        <p class="text-gray-500">No orders yet. <a href="/products" class="text-amber-700 underline">Start shopping!</a></p>
         {% endif %}
     </div>
 </div>

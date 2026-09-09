@@ -17,7 +17,7 @@
             <label class="block text-sm font-medium">Location</label>
             <input type="text" name="location" value="{{ current_user.location or '' }}" class="w-full px-3 py-2 border rounded-lg">
         </div>
-        <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg">Save Changes</button>
+        <button type="submit" class="bg-amber-600 text-white px-4 py-2 rounded-lg">Save Changes</button>
     </form>
 
     <hr class="my-6">
@@ -25,15 +25,67 @@
     <form method="POST" action="/change-password">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="mb-3">
-            <input type="password" name="current_password" placeholder="Current Password" class="w-full px-3 py-2 border rounded-lg" required>
+            <div class="relative">
+                <input type="password" name="current_password" id="current_password" placeholder="Current Password" class="w-full px-3 py-2 border rounded-lg pr-10" required>
+                <button type="button" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500" onclick="togglePassword('current_password')" aria-label="Show password">
+                    <svg id="current_password-eye-on" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    <svg id="current_password-eye-off" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" hidden>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>
+                    </svg>
+                </button>
+            </div>
         </div>
         <div class="mb-3">
-            <input type="password" name="new_password" placeholder="New Password" class="w-full px-3 py-2 border rounded-lg" required>
+            <div class="relative">
+                <input type="password" name="new_password" id="new_password" placeholder="New Password" class="w-full px-3 py-2 border rounded-lg pr-10" required>
+                <button type="button" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500" onclick="togglePassword('new_password')" aria-label="Show password">
+                    <svg id="new_password-eye-on" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    <svg id="new_password-eye-off" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" hidden>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>
+                    </svg>
+                </button>
+            </div>
         </div>
         <div class="mb-3">
-            <input type="password" name="confirm_password" placeholder="Confirm New Password" class="w-full px-3 py-2 border rounded-lg" required>
+            <div class="relative">
+                <input type="password" name="confirm_password" id="confirm_password" placeholder="Confirm New Password" class="w-full px-3 py-2 border rounded-lg pr-10" required>
+                <button type="button" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500" onclick="togglePassword('confirm_password')" aria-label="Show password">
+                    <svg id="confirm_password-eye-on" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    <svg id="confirm_password-eye-off" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" hidden>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>
+                    </svg>
+                </button>
+            </div>
         </div>
         <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">Update Password</button>
     </form>
 </div>
+<script>
+function togglePassword(fieldId) {
+    const field = document.getElementById(fieldId);
+    const eyeOn = document.getElementById(fieldId + '-eye-on');
+    const eyeOff = document.getElementById(fieldId + '-eye-off');
+    const button = eyeOn.closest('button');
+    if (field.type === "password") {
+        field.type = "text";
+        eyeOn.hidden = true;
+        eyeOff.hidden = false;
+        button.setAttribute('aria-label', 'Hide password');
+    } else {
+        field.type = "password";
+        eyeOn.hidden = false;
+        eyeOff.hidden = true;
+        button.setAttribute('aria-label', 'Show password');
+    }
+}
+</script>
 {% endblock %}

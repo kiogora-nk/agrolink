@@ -145,7 +145,7 @@ def init():
     ''')
     conn.commit()
     conn.close()
-    print("✅ Database tables created.")
+    print("[OK] Database tables created.")
 
 def seed():
     conn = get_connection()
@@ -185,7 +185,7 @@ def seed():
         )
     conn.commit()
     conn.close()
-    print("✅ Demo data seeded.")
+    print("[OK] Demo data seeded.")
 
 def summary():
     conn = get_connection()
@@ -203,15 +203,15 @@ def backup():
     backup_file = f"backups/market2farm_backup_{ts}.db"
     with open(DB_PATH, 'rb') as src, open(backup_file, 'wb') as dst:
         dst.write(src.read())
-    print(f"✅ Backup saved to {backup_file}")
+    print(f"[OK] Backup saved to {backup_file}")
 
 def restore(backup_file):
     if not os.path.exists(backup_file):
-        print(f"❌ File not found: {backup_file}")
+        print(f"[ERROR] File not found: {backup_file}")
         return
     with open(backup_file, 'rb') as src, open(DB_PATH, 'wb') as dst:
         dst.write(src.read())
-    print("✅ Database restored.")
+    print("[OK] Database restored.")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Market2Farm Database Manager')

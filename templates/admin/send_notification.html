@@ -4,13 +4,18 @@
 <h2 class="text-2xl font-bold mb-4">Send Notification</h2>
 <form method="POST" class="max-w-lg bg-white p-6 rounded shadow">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="block font-semibold text-sm mb-1">Recipient</label>
     <select name="user_id" class="w-full p-2 mb-3 border rounded">
-        <option value="">All Users</option>
+        <option value="">All Active Users</option>
         {% for user in users %}
             <option value="{{ user.id }}">{{ user.username }} ({{ user.role }})</option>
         {% endfor %}
     </select>
-    <textarea name="message" placeholder="Notification message" class="w-full p-2 mb-3 border rounded" required></textarea>
-    <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded">Send</button>
+    <label class="block font-semibold text-sm mb-1">Title</label>
+    <input type="text" name="title" value="Notification" class="w-full p-2 mb-3 border rounded" required>
+    <label class="block font-semibold text-sm mb-1">Message</label>
+    <textarea name="message" placeholder="Notification message" rows="4" class="w-full p-2 mb-3 border rounded" required></textarea>
+    <button type="submit" class="bg-amber-600 text-white px-4 py-2 rounded">Send</button>
+    <a href="{{ url_for('admin_dashboard') }}" class="ml-2 bg-gray-300 px-4 py-2 rounded">Cancel</a>
 </form>
 {% endblock %}

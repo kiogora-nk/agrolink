@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Create Admin / Staff{% endblock %}
+{% block content %}
+<div class="max-w-xl mx-auto bg-white p-6 rounded shadow">
+    <div class="flex items-center justify-between mb-4">
+        <h1 class="text-2xl font-bold text-slate-900">Create Admin / Staff</h1>
+        <a href="{{ url_for('admin_users') }}" class="text-sm text-amber-700 font-semibold">Back to Users</a>
+    </div>
+    <p class="text-slate-600 mb-4 text-sm">Create a new staff account and assign its role. They will receive their login details by email.</p>
+
+    <form method="POST" class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div>
+            <label class="block font-semibold text-sm mb-1">Username</label>
+            <input type="text" name="username" class="w-full border rounded px-3 py-2" required>
+        </div>
+        <div>
+            <label class="block font-semibold text-sm mb-1">Email</label>
+            <input type="email" name="email" class="w-full border rounded px-3 py-2" required>
+        </div>
+        <div>
+            <label class="block font-semibold text-sm mb-1">Phone (optional)</label>
+            <input type="tel" name="phone" class="w-full border rounded px-3 py-2" placeholder="0712345678">
+        </div>
+        <div>
+            <label class="block font-semibold text-sm mb-1">Temporary Password</label>
+            <input type="text" name="password" class="w-full border rounded px-3 py-2" minlength="8" required>
+            <p class="text-xs text-slate-500 mt-1">At least 8 characters. Ask them to change it after first login.</p>
+        </div>
+        <div>
+            <label class="block font-semibold text-sm mb-1">Role</label>
+            <select name="role" class="w-full border rounded px-3 py-2">
+                <option value="admin">Admin (manage products, orders, messages)</option>
+                <option value="chief_admin">Chief Admin (full control + role management)</option>
+                <option value="farmer">Farmer (list products)</option>
+            </select>
+        </div>
+        <button type="submit" class="w-full bg-amber-600 text-white px-4 py-2 rounded font-semibold hover:bg-amber-700">Create Account</button>
+    </form>
+</div>
+{% endblock %}
