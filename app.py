@@ -136,7 +136,13 @@ def allowed_image(filename):
 
 
 def save_uploaded_image(file_storage):
-    """Save an uploaded image and return its stored filename, or None."""
+    """Save an uploaded image and return its stored filename, or None.
+
+    The file is written to the local uploads folder (local dev, and the
+    crop-disease detector reads it from there) AND stored in the database
+    so the image survives restarts and redeploys on hosts like Render
+    where the filesystem is wiped.
+    """
     if not file_storage or not file_storage.filename:
         return None
     if not allowed_image(file_storage.filename):
@@ -144,7 +150,19 @@ def save_uploaded_image(file_storage):
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     ext = file_storage.filename.rsplit('.', 1)[1].lower()
     filename = f"{secrets.token_hex(16)}.{ext}"
-    file_storage.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    data = file_storage.read()
+    with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'wb') as fh:
+        fh.write(data)
+    try:
+        db.session.add(UploadedImage(
+            filename=filename,
+            mimetype=file_storage.mimetype or '',
+            data=data,
+        ))
+        db.session.commit()
+    except Exception as exc:  # noqa: BLE001 - disk copy still works
+        db.session.rollback()
+        app.logger.error('Failed to persist uploaded image to DB: %s', exc)
     return filename
 
 # ============================================================================
@@ -278,8 +296,24 @@ class Notification(db.Model):
     type = db.Column(db.String(50))
     read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=utcnow)
-    
+
     user = db.relationship('User', backref='notifications')
+
+class UploadedImage(db.Model):
+    """An uploaded image stored in the database.
+
+    The web server's filesystem on hosts like Render is ephemeral: every
+    restart or deploy wipes locally saved files. Keeping image bytes in
+    the database (which lives on managed Postgres) makes uploads survive
+    redeploys. The /uploads/<filename> route serves from here first and
+    falls back to the local folder for legacy files.
+    """
+    __tablename__ = 'uploaded_images'
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    mimetype = db.Column(db.String(50))
+    data = db.Column(db.LargeBinary, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 class DiseaseDetection(db.Model):
     """A crop disease diagnosis produced by the AI detector (crop_ai)."""
@@ -1067,7 +1101,13 @@ def public_profile(username):
 
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    """Serve uploaded images."""
+    """Serve uploaded images - from the database first (images survive
+    redeploys there), falling back to the local uploads folder."""
+    img = UploadedImage.query.filter_by(filename=filename).first()
+    if img and img.data:
+        mimetype = img.mimetype if img.mimetype and img.mimetype.startswith('image/') else 'image/jpeg'
+        return send_file(BytesIO(img.data), mimetype=mimetype,
+                         max_age=86400)
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 @app.route('/order/<int:id>/receipt')
@@ -2594,6 +2634,39 @@ def sync_schema():
                 db.session.rollback()
                 print(f'Schema sync: skipped {table.name}.{column.name} ({exc})')
 
+def backfill_uploads_to_db():
+    """Copy any images sitting in the local uploads folder into the
+    database so they survive the next wipe/redeploy. Idempotent: files
+    already stored are skipped. Protects images uploaded before the
+    DB-backed upload storage existed."""
+    folder = app.config['UPLOAD_FOLDER']
+    if not os.path.isdir(folder):
+        return
+    stored = {row.filename for row in db.session.query(UploadedImage.filename).all()}
+    moved = 0
+    for filename in os.listdir(folder):
+        full = os.path.join(folder, filename)
+        if not os.path.isfile(full) or filename in stored:
+            continue
+        if not allowed_image(filename):
+            continue
+        try:
+            with open(full, 'rb') as fh:
+                data = fh.read()
+            ext = filename.rsplit('.', 1)[1].lower()
+            db.session.add(UploadedImage(
+                filename=filename,
+                mimetype=f'image/{ "jpeg" if ext in ("jpg", "jpeg") else ext }',
+                data=data,
+            ))
+            moved += 1
+        except OSError as exc:
+            app.logger.error('Backfill skipped %s: %s', filename, exc)
+    if moved:
+        db.session.commit()
+        print(f'Backfilled {moved} existing upload(s) into the database.')
+
+
 def init_db():
     """Create uploads folder, tables, schema patches, and seed data.
     Safe to call repeatedly (create_all / sync_schema / seed_data are all
@@ -2607,6 +2680,7 @@ def init_db():
         db.create_all()
         sync_schema()
         seed_data()
+        backfill_uploads_to_db()
 
 
 def create_app():
