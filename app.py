@@ -2460,31 +2460,65 @@ def seed_data():
             db.session.commit()
             print('Products seeded!')
 
-        # Seed the first few system-built reviews (only when none exist yet).
+        # Starter reviews. They are seeded under individual customer names
+        # (not one system account) so the reviews section reads naturally.
+        # Older deployments seeded these under biofarm_team — remove those
+        # and re-seed under individual names.
+        team = User.query.filter_by(username='biofarm_team').first()
+        if team:
+            removed = Review.query.filter_by(user_id=team.id).delete()
+            if removed:
+                db.session.commit()
+
         if Review.query.count() == 0:
-            team = User.query.filter_by(username='biofarm_team').first()
+            reviewers = [
+                ('Mary Wanjiku', 'Nairobi, Kenya'),
+                ('James Otieno', 'Kisumu, Kenya'),
+                ('Peter Akenga', 'Eldoret, Kenya'),
+                ('Carol Njambi', 'Nyeri, Kenya'),
+                ('David Mutua', 'Machakos, Kenya'),
+                ('Aisha Hassan', 'Mombasa, Kenya'),
+            ]
+            review_users = {}
+            for display_name, location in reviewers:
+                u = User.query.filter_by(username=display_name).first()
+                if not u:
+                    u = User(
+                        username=display_name,
+                        email=f'{display_name.lower().replace(" ", ".")}@example.com',
+                        password_hash=generate_password_hash(secrets.token_hex(16)),  # no human login
+                        role='customer',
+                        verified=True,
+                        bio='BioFarm Fruits customer.',
+                        location=location,
+                    )
+                    db.session.add(u)
+                    db.session.commit()
+                review_users[display_name] = u
+
             sample_reviews = [
-                ('Dragon Fruit Red', 5, 'Deep red flesh, sweetness was spot on, and it '
+                ('Mary Wanjiku', 'Dragon Fruit Red', 5, 'Deep red flesh, sweetness was spot on, and it '
                  'arrived in perfect condition. Our kids now ask for it by name.'),
-                ('Dragon Fruit Red', 4, 'Great quality fruit. A little pricier than the '
+                ('James Otieno', 'Dragon Fruit Red', 4, 'Great quality fruit. A little pricier than the '
                  'market but you can taste the difference.'),
-                ('Dragon Fruit Seedlings', 5, 'The cuttings rooted quickly and are thriving '
+                ('Peter Akenga', 'Dragon Fruit Seedlings', 5, 'The cuttings rooted quickly and are thriving '
                  'six weeks in. Clear planting instructions came along too.'),
-                ('Hass Avocado Seedlings', 5, 'Healthy, disease-free seedlings. Strong stems '
+                ('Carol Njambi', 'Hass Avocado Seedlings', 5, 'Healthy, disease-free seedlings. Strong stems '
                  'and good root ball on every single one.'),
-                ('Hass Avocado Fruit', 4, 'Creamy and ripened perfectly. Ordering again '
+                ('David Mutua', 'Hass Avocado Fruit', 4, 'Creamy and ripened perfectly. Ordering again '
                  'next month.'),
-                ('Soursop', 5, 'Fresh soursop is hard to find locally — this was juicy '
+                ('Aisha Hassan', 'Soursop', 5, 'Fresh soursop is hard to find locally — this was juicy '
                  'and made wonderful juice.'),
             ]
             added = 0
-            for product_name, rating, comment in sample_reviews:
+            for display_name, product_name, rating, comment in sample_reviews:
                 product = Product.query.filter_by(name=product_name).first()
-                if not product:
+                user = review_users.get(display_name)
+                if not product or not user:
                     continue
                 db.session.add(Review(
                     product_id=product.id,
-                    user_id=team.id,
+                    user_id=user.id,
                     rating=rating,
                     comment=comment,
                     verified_purchase=True,
@@ -2492,7 +2526,7 @@ def seed_data():
                 added += 1
             if added:
                 db.session.commit()
-                print(f'{added} system reviews seeded!')
+                print(f'{added} starter reviews seeded under individual names!')
 
         # Seed editable CMS content
         defaults = {

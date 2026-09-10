@@ -5,6 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token }}">
+    {% if logo_file %}
+    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename=logo_file) }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename=logo_file) }}">
+    {% else %}
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
+    {% endif %}
     <title>BioFarm Fruits - {% block title %}{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
