@@ -42,7 +42,7 @@
             <a href="{{ url_for('product_detail', id=item.id) }}" class="bg-white p-3 rounded shadow hover:shadow-lg transition">
                 <div class="aspect-square bg-gray-100 rounded overflow-hidden">
                     {% if item.image %}
-                    <img src="{{ item.image }}" alt="{{ item.name }}" class="w-full h-full object-cover">
+                    <img src="{{ image_src(item.image) }}" alt="{{ item.name }}" class="w-full h-full object-cover">
                     {% endif %}
                 </div>
                 <p class="font-semibold mt-2">{{ item.name }}</p>

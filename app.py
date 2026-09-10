@@ -455,6 +455,12 @@ def inject_globals():
         'csrf_token': generate_csrf(),
         'content': get_content,
         'now': utcnow(),
+        # Resolve a stored product image value into a usable <img src>,
+        # whichever format it is: full URL (/uploads/..., http(s)://...) or
+        # a legacy bare uploaded filename.
+        'image_src': lambda value: (
+            value if not value or value.startswith(('http://', 'https://', '/', 'data:'))
+            else url_for('uploaded_file', filename=value)),
         # Notification bell in the navbar: unread count + latest items.
         'unread_notifications': (
             Notification.query.filter_by(user_id=current_user.id, read=False).count()
@@ -1301,6 +1307,13 @@ def _save_product_from_form(product, form, files, allow_status=False):
     if saved:
         product.image = url_for('uploaded_file', filename=saved)
     elif image_url:
+        # Users often paste links without the scheme; a scheme-less URL
+        # would resolve as a broken relative path in the browser.
+        if not image_url.startswith(('http://', 'https://')):
+            if '.' not in image_url or ' ' in image_url:
+                return False, ('Please paste a full image link starting with '
+                               'https:// (or upload an image file instead).')
+            image_url = 'https://' + image_url
         product.image = image_url
 
     if allow_status:

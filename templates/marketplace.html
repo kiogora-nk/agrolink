@@ -43,7 +43,7 @@
         <article class="overflow-hidden rounded bg-white shadow-sm product-card">
             <div class="aspect-[4/3] bg-slate-100">
                 {% if product.image %}
-                <img src="{{ url_for('uploaded_file', filename=product.image) if product.image and not product.image.startswith('http') else product.image }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://commons.wikimedia.org/wiki/Special:Redirect/file/Red%20dragon%20fruit.jpg'">
+                <img src="{{ image_src(product.image) }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://commons.wikimedia.org/wiki/Special:Redirect/file/Red%20dragon%20fruit.jpg'">
                 {% else %}
                 <div class="flex h-full items-center justify-center text-slate-400">{{ product.name }}</div>
                 {% endif %}

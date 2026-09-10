@@ -20,7 +20,7 @@
             <div class="grid gap-4 sm:grid-cols-[160px_1fr]">
                 <div class="aspect-[4/3] overflow-hidden rounded bg-slate-100">
                     {% if product.image %}
-                    <img src="{{ url_for('uploaded_file', filename=product.image) if product.image and not product.image.startswith('http') else product.image }}" alt="{{ product.name }}" class="h-full w-full object-cover">
+                    <img src="{{ image_src(product.image) }}" alt="{{ product.name }}" class="h-full w-full object-cover">
                     {% else %}
                     <div class="flex h-full items-center justify-center text-sm text-slate-400">No image</div>
                     {% endif %}
