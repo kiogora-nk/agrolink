@@ -28,13 +28,27 @@
                     <div class="text-xs text-gray-400 mt-1">{{ msg.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
                 </td>
                 <td class="px-6 py-4">
-                    {% if msg.read %}
-                    <span class="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Read</span>
-                    {% else %}
-                    <form method="POST" action="/admin/message/{{ msg.id }}/read">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 hover:bg-blue-200">Mark Read</button>
-                    </form>
+                    <div class="flex flex-wrap items-center gap-2">
+                        {% if not msg.read %}
+                        <form method="POST" action="/admin/message/{{ msg.id }}/read">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 hover:bg-blue-200">Mark Read</button>
+                        </form>
+                        {% else %}
+                        <span class="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Read</span>
+                        {% endif %}
+                        <a href="/admin/message/{{ msg.id }}/reply"
+                           class="px-2 py-1 text-xs rounded bg-amber-100 text-amber-800 hover:bg-amber-200">
+                            {{ 'Reply again' if msg.replied else 'Reply' }}
+                        </a>
+                        <form method="POST" action="/admin/message/{{ msg.id }}/delete"
+                              onsubmit="return confirm('Delete this message permanently?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200">Delete</button>
+                        </form>
+                    </div>
+                    {% if msg.replied %}
+                    <span class="mt-1 inline-block px-2 py-1 text-xs rounded bg-green-100 text-green-800">Replied</span>
                     {% endif %}
                 </td>
             </tr>

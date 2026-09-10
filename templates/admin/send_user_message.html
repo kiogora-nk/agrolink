@@ -1,9 +1,9 @@
 ﻿{% extends "base.html" %}
 {% block title %}Send Message to {{ user.username }}{% endblock %}
 {% block content %}
-<div class="max-w-2xl mx-auto bg-white p-6 rounded shadow">
-    <h2 class="text-2xl font-bold mb-4">Send Message to {{ user.username }}</h2>
-    <div class="mb-4 p-3 bg-gray-100 rounded">
+<div class="max-w-2xl mx-auto bg-white p-4 sm:p-6 rounded shadow">
+    <h2 class="text-xl sm:text-2xl font-bold mb-4">Send Message to {{ user.username }}</h2>
+    <div class="mb-4 p-3 bg-gray-100 rounded break-words">
         <p><strong>Email:</strong> {{ user.email }}</p>
         <p><strong>Phone:</strong> {{ user.phone or 'Not provided' }}</p>
         <p><strong>Role:</strong> {{ user.role }}</p>
@@ -27,8 +27,10 @@
                 <input type="checkbox" name="send_whatsapp"> Open a WhatsApp message (if phone number available)
             </label>
         </div>
-        <button type="submit" class="bg-amber-600 text-white px-4 py-2 rounded">Send Message</button>
-        <a href="{{ url_for('admin_users') }}" class="ml-2 bg-gray-300 px-4 py-2 rounded">Cancel</a>
+        <div class="flex flex-col sm:flex-row sm:items-center">
+            <button type="submit" class="bg-amber-600 text-white px-4 py-2.5 rounded font-semibold hover:bg-amber-700 w-full sm:w-auto">Send Message</button>
+            <a href="{{ url_for('admin_users') }}" class="mt-2 sm:mt-0 sm:ml-2 text-center bg-gray-300 px-4 py-2.5 rounded w-full sm:w-auto">Cancel</a>
+        </div>
     </form>
 </div>
 {% endblock %}

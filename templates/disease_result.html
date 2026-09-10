@@ -5,7 +5,7 @@
     <h1 class="text-3xl font-bold mb-6">Diagnosis Results</h1>
     
     <div class="bg-white rounded shadow p-6 mb-6">
-        <div class="flex items-center justify-between mb-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
             <h2 class="text-xl font-bold">Crop: {{ crop_type|replace('_', ' ')|title }}</h2>
             <span class="px-3 py-1 rounded-full text-sm font-bold 
                 {% if confidence > 0.8 %}bg-green-100 text-green-800
@@ -31,11 +31,11 @@
         </div>
     </div>
     
-    <div class="flex gap-4">
-        <a href="/disease-detection" class="bg-amber-600 text-white px-6 py-2 rounded font-bold hover:bg-amber-700">
+    <div class="flex flex-col gap-4 sm:flex-row">
+        <a href="/disease-detection" class="w-full text-center sm:w-auto bg-amber-600 text-white px-6 py-3 rounded font-bold hover:bg-amber-700">
             Diagnose Another
         </a>
-        <a href="/contact" class="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700">
+        <a href="/contact" class="w-full text-center sm:w-auto bg-blue-600 text-white px-6 py-3 rounded font-bold hover:bg-blue-700">
             Need Expert Help?
         </a>
     </div>

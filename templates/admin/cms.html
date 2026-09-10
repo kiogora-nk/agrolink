@@ -2,13 +2,13 @@
 {% block title %}Site Content{% endblock %}
 {% block content %}
 <div class="max-w-2xl mx-auto">
-    <div class="mb-4 flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-slate-900">Site Content</h1>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900">Site Content</h1>
         <a href="{{ url_for('admin_dashboard') }}" class="rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-800">Back to Dashboard</a>
     </div>
     <p class="mb-4 text-slate-600">Edit the copy shown on the public homepage, about and contact sections.</p>
 
-    <form method="POST" class="space-y-4 rounded bg-white p-6 shadow-sm">
+    <form method="POST" class="space-y-4 rounded bg-white p-4 sm:p-6 shadow-sm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% for key, label, kind in fields %}
         <div>

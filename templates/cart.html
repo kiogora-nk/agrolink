@@ -9,9 +9,9 @@
             <p class="font-bold">{{ product.name }}</p>
             <p>KES {{ "{:,.0f}".format(product.price) }} x <span class="item-qty">{{ cart_item.quantity }}</span> = <strong class="item-total">KES {{ "{:,.0f}".format(product.price * cart_item.quantity) }}</strong></p>
         </div>
-        <div class="flex items-center">
-            <input type="number" min="1" value="{{ cart_item.quantity }}" class="qty-input w-16 border rounded px-2 py-1" data-id="{{ cart_item.id }}">
-            <button class="remove-item bg-red-600 text-white px-3 py-1 rounded ml-2" data-id="{{ cart_item.id }}">Remove</button>
+        <div class="flex items-center gap-2">
+            <input type="number" min="1" value="{{ cart_item.quantity }}" class="qty-input w-20 border rounded px-2 py-2" data-id="{{ cart_item.id }}">
+            <button class="remove-item bg-red-600 text-white px-4 py-2.5 rounded" data-id="{{ cart_item.id }}">Remove</button>
         </div>
     </div>
     {% else %}
@@ -21,7 +21,7 @@
 {% if cart_items %}
 <div class="mt-4 flex flex-col gap-2 sm:text-right sm:items-end">
     <p class="text-xl font-bold">Total: KES <span id="cart-total">{{ "{:,.0f}".format(total) }}</span></p>
-    <button id="checkout-btn" class="bg-amber-600 text-white px-6 py-2 rounded">Checkout (Pay Later)</button>
+    <button id="checkout-btn" class="w-full sm:w-auto bg-amber-600 text-white px-6 py-3 rounded">Checkout (Pay Later)</button>
 </div>
 {% endif %}
 

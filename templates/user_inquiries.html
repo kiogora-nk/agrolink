@@ -9,7 +9,7 @@
             <div>
                 <p class="font-semibold">Product: <a href="{{ url_for('product_detail', id=inquiry.product_id) }}" class="text-amber-700 underline">{{ inquiry.product.name }}</a></p>
                 <p class="text-sm text-gray-500">Sent: {{ inquiry.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
-                <p class="mt-2">Your message: {{ inquiry.message }}</p>
+                <p class="mt-2 break-words">Your message: {{ inquiry.message }}</p>
                 <p class="mt-1 text-sm">Status: 
                     <span class="font-semibold {% if inquiry.status == 'replied' %}text-green-600{% else %}text-yellow-600{% endif %}">
                         {{ inquiry.status|capitalize }}

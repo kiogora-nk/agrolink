@@ -6,10 +6,10 @@
         <h2 class="text-xl font-bold break-words min-w-0">Chat with {{ other_user.username }}</h2>
         <a href="{{ url_for('user_chats') }}" class="text-white underline">Back to Chats</a>
     </div>
-    <div class="p-4 h-96 overflow-y-auto space-y-3" id="chat-messages">
+    <div class="p-4 h-[60vh] sm:h-96 overflow-y-auto space-y-3" id="chat-messages">
         {% for msg in messages %}
         <div class="{% if msg.from_user_id == current_user.id %}text-right{% else %}text-left{% endif %}">
-            <div class="inline-block max-w-[70%] rounded px-3 py-2 {% if msg.from_user_id == current_user.id %}bg-green-100{% else %}bg-gray-100{% endif %}">
+            <div class="inline-block max-w-[85%] sm:max-w-[70%] rounded px-3 py-2 {% if msg.from_user_id == current_user.id %}bg-green-100{% else %}bg-gray-100{% endif %}">
                 <p class="text-sm break-words">{{ msg.message }}</p>
                 <p class="text-xs text-gray-500 mt-1">{{ msg.created_at.strftime('%H:%M %b %d') }}</p>
             </div>
@@ -19,7 +19,7 @@
     <form method="POST" class="p-4 border-t">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <textarea name="message" rows="3" class="w-full border rounded p-2" placeholder="Type your message..." required></textarea>
-        <button type="submit" class="mt-2 bg-amber-600 text-white px-4 py-2 rounded">Send</button>
+        <button type="submit" class="mt-2 w-full sm:w-auto min-h-[44px] bg-amber-600 text-white px-4 py-2 rounded">Send</button>
     </form>
 </div>
 <script>document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;</script>

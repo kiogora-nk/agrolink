@@ -103,7 +103,7 @@
         <div class="space-y-4">
             {% for review in reviews %}
             <div class="border-b pb-4">
-                <div class="flex items-center justify-between">
+                <div class="flex flex-wrap items-center justify-between gap-2">
                     <div>
                         <span class="font-semibold">{{ review.user.username }}</span>
                         {{ verified_badge(review.user) }}
@@ -128,7 +128,7 @@
     {% if related %}
     <div class="mt-8">
         <h3 class="text-xl font-bold mb-4">Related Products</h3>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {% for item in related %}
             <a href="/product/{{ item.id }}" class="bg-white p-3 rounded shadow hover:shadow-lg transition">
                 <div class="aspect-square bg-gray-100 rounded overflow-hidden">

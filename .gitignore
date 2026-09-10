@@ -1,4 +1,20 @@
-venv/ 
-.env 
-__pycache__/ 
-*.pyc 
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Environment / secrets
+.env
+
+# Local databases and app instance data
+*.db
+instance/
+
+# User uploads (runtime data, not source)
+uploads/
+
+# Runtime locks
+*.lock
+
+# Claude Code worktrees
+.claude/worktrees/

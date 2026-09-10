@@ -2,7 +2,7 @@
 {% block title %}Receipt {{ order.receipt_number }}{% endblock %}
 {% block content %}
 <div class="max-w-2xl mx-auto">
-    <div class="mb-4 flex items-center justify-between">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h1 class="text-2xl font-bold text-slate-900">Receipt</h1>
         <a href="{{ url_for('download_receipt', id=order.id) }}" class="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">Download PDF</a>
     </div>

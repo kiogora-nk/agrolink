@@ -4,9 +4,9 @@
 <h2 class="text-2xl font-bold mb-4">Orders for Your Products</h2>
 <div class="space-y-3">
     {% for order in orders %}
-    <div class="bg-white p-3 rounded shadow">
-        <p>Order #{{ order.id }} | Product ID: {{ order.product_id }} | Buyer ID: {{ order.buyer_id }}</p>
-        <p>Quantity: {{ order.quantity }} | Total: KES {{ "{:,.0f}".format(order.total_price) }} | Status: {{ order.status }}</p>
+    <div class="bg-white p-3 sm:p-4 rounded shadow">
+        <p class="break-words">Order #{{ order.id }} | Product ID: {{ order.product_id }} | Buyer ID: {{ order.buyer_id }}</p>
+        <p class="break-words">Quantity: {{ order.quantity }} | Total: KES {{ "{:,.0f}".format(order.total_price) }} | Status: {{ order.status }}</p>
         <p class="text-xs text-gray-500">{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
         {% if order.status == 'admin_connected' %}
         <p class="text-green-600 text-sm">Admin has connected you with the buyer. Check your notifications.</p>

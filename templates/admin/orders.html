@@ -19,6 +19,7 @@
         {% endfor %}
     </div>
 
+    <div class="hidden md:block">
     <div class="overflow-x-auto rounded bg-white shadow-sm">
         <table class="w-full text-left text-sm">
             <thead class="border-b border-slate-200 text-slate-500">
@@ -159,6 +160,71 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+    </div>
+
+    <div class="space-y-3 md:hidden">
+        {% for order in orders %}
+        <div class="rounded border border-slate-200 bg-white p-4 text-sm shadow-sm">
+            <div class="flex items-start justify-between gap-2">
+                <span class="font-mono text-xs">{{ order.receipt_number or order.id }}</span>
+                <span class="rounded px-2 py-1 text-xs font-semibold
+                    {% if order.status == 'delivered' %}bg-green-100 text-green-800
+                    {% elif order.status == 'cancelled' %}bg-red-100 text-red-800
+                    {% elif order.status == 'confirmed' %}bg-blue-100 text-blue-800
+                    {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                    {{ order.status }}
+                </span>
+            </div>
+            <p class="mt-1 font-semibold text-slate-900">{{ order.user.username if order.user else 'User' }}</p>
+            <p class="text-xs text-slate-500">{{ order.delivery_phone or (order.user.phone if order.user else None) or '-' }}</p>
+            {% if order.user and order.user.email %}
+            <a href="mailto:{{ order.user.email }}" class="text-xs break-all text-amber-700 underline">{{ order.user.email }}</a>
+            {% endif %}
+            <p class="mt-1 text-slate-600">{{ order.product.name if order.product else 'Product' }} &times; {{ order.quantity }} &mdash; KES {{ '%.2f'|format(order.total_price or 0) }}</p>
+            <p class="mt-1 text-xs text-slate-600">
+                {% if order.delivery_address %}
+                <span title="{{ order.delivery_address }}">{{ order.delivery_address|truncate(60) }}</span>
+                {% else %}
+                <span class="text-slate-400">No delivery address</span>
+                {% endif %}
+            </p>
+            <p class="mt-1 text-xs text-slate-500">Placed {{ order.created_at.strftime('%b %d, %Y') if order.created_at else '-' }}</p>
+            {% set contact_phone = order.delivery_phone or (order.user.phone if order.user else None) %}
+            <div class="mt-3 flex flex-wrap gap-2">
+                {% set wa = wa_link(contact_phone, 'Hello %s, this is BioFarm Fruits about your order %s (%s). When would be a good time to deliver?' % (order.user.username if order.user else 'there', order.receipt_number or order.id, order.product.name if order.product else '')) %}
+                {% if wa %}
+                <a href="{{ wa }}" target="_blank" rel="noopener" class="rounded bg-green-500 px-3 py-1.5 text-xs font-semibold text-white">WhatsApp customer</a>
+                {% endif %}
+                {% set tel = tel_link(contact_phone) %}
+                {% if tel %}
+                <a href="{{ tel }}" class="rounded bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white">Call</a>
+                {% endif %}
+                {% set sms = sms_link(contact_phone, 'Hello, this is BioFarm Fruits about your order %s.' % (order.receipt_number or order.id)) %}
+                {% if sms %}
+                <a href="{{ sms }}" class="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">SMS</a>
+                {% endif %}
+                {% if order.user and order.user.email %}
+                <a href="mailto:{{ order.user.email }}?subject={{ ('Your order %s' % (order.receipt_number or order.id)) | urlencode }}" class="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Email customer</a>
+                {% endif %}
+                <a href="{{ url_for('send_user_message', id=order.user_id) }}" class="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Message in app</a>
+            </div>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+                <form method="POST" action="{{ url_for('update_order_status', id=order.id) }}" class="flex w-full flex-wrap items-center gap-1 sm:w-auto">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <select name="status" class="flex-1 rounded border p-1 text-xs sm:flex-none">
+                        {% for s in ['pending', 'confirmed', 'delivered', 'cancelled'] %}
+                        <option value="{{ s }}" {% if order.status == s %}selected{% endif %}>{{ s }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Update</button>
+                </form>
+                <a href="{{ url_for('view_receipt', id=order.id) }}" class="rounded border px-3 py-1 text-xs font-semibold text-slate-700">Receipt</a>
+            </div>
+        </div>
+        {% else %}
+        <div class="rounded bg-white p-6 text-center text-slate-500 shadow-sm">No orders found.</div>
+        {% endfor %}
     </div>
 </section>
 <script>

@@ -48,15 +48,15 @@
     <nav class="bg-slate-900 text-white shadow-lg">
         <div class="container mx-auto px-4">
             <div class="flex justify-between items-center py-3">
-                <a href="/" class="flex items-center gap-2 text-xl font-bold">
+                <a href="/" class="flex min-w-0 items-center gap-2 text-lg sm:text-xl font-bold">
                     {% if logo_file %}
                     <img src="{{ url_for('static', filename=logo_file) }}" alt="{{ company_name }} logo"
-                         class="h-10 w-auto">
+                         class="h-9 sm:h-10 w-auto shrink-0">
                     {% else %}
-                    <span class="flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-2xl leading-none"
+                    <span class="flex h-9 sm:h-10 w-9 sm:w-10 shrink-0 items-center justify-center rounded-full bg-amber-400 text-2xl leading-none"
                           aria-hidden="true">🌱</span>
                     {% endif %}
-                    <span>{{ company_name }}</span>
+                    <span class="truncate">{{ company_name }}</span>
                 </a>
 
                 <!-- Mobile hamburger -->
@@ -154,7 +154,7 @@
             </div>
 
             <!-- Mobile menu -->
-            <div id="navMenu" class="hidden md:hidden pb-3 flex-col gap-1">
+            <div id="navMenu" class="hidden md:hidden pb-3 flex-col gap-1 max-h-[calc(100vh-4rem)] overflow-y-auto">
                 <form action="/products" method="get" class="py-2" role="search">
                     <div class="relative">
                         <input type="search" name="search" value=""
@@ -168,30 +168,30 @@
                         </button>
                     </div>
                 </form>
-                <a href="/products" class="block py-2 hover:text-amber-300">Products</a>
-                <a href="/training" class="block py-2 hover:text-amber-300">Training</a>
-                <a href="/disease-detection" class="block py-2 hover:text-amber-300">Crop AI</a>
-                <a href="/blog" class="block py-2 hover:text-amber-300">Blog</a>
-                <a href="/contact" class="block py-2 hover:text-amber-300">Contact</a>
+                <a href="/products" class="block py-2.5 hover:text-amber-300">Products</a>
+                <a href="/training" class="block py-2.5 hover:text-amber-300">Training</a>
+                <a href="/disease-detection" class="block py-2.5 hover:text-amber-300">Crop AI</a>
+                <a href="/blog" class="block py-2.5 hover:text-amber-300">Blog</a>
+                <a href="/contact" class="block py-2.5 hover:text-amber-300">Contact</a>
                 {% if current_user.is_authenticated %}
                     {% if current_user.can_manage_products() %}
-                        <a href="/upload-product" class="block py-2 hover:text-amber-300">Add Product</a>
+                        <a href="/upload-product" class="block py-2.5 hover:text-amber-300">Add Product</a>
                     {% endif %}
                     {% if current_user.is_chief_admin() %}
-                        <a href="/chief-admin/dashboard" class="block py-2 hover:text-amber-300">Chief Admin</a>
+                        <a href="/chief-admin/dashboard" class="block py-2.5 hover:text-amber-300">Chief Admin</a>
                     {% elif current_user.is_admin() %}
-                        <a href="/admin/dashboard" class="block py-2 hover:text-amber-300">Admin</a>
+                        <a href="/admin/dashboard" class="block py-2.5 hover:text-amber-300">Admin</a>
                     {% endif %}
-                    <a href="/dashboard" class="block py-2 hover:text-amber-300">Dashboard</a>
+                    <a href="/dashboard" class="block py-2.5 hover:text-amber-300">Dashboard</a>
                     <a href="/notifications" class="flex items-center justify-between py-2 hover:text-amber-300">
                         <span>Notifications</span>
                         {% if unread_notifications %}
                         <span class="rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">{{ unread_notifications }}</span>
                         {% endif %}
                     </a>
-                    <a href="/logout" class="block py-2 hover:text-amber-300">Logout</a>
+                    <a href="/logout" class="block py-2.5 hover:text-amber-300">Logout</a>
                 {% else %}
-                    <a href="/login" class="block py-2 hover:text-amber-300">Login</a>
+                    <a href="/login" class="block py-2.5 hover:text-amber-300">Login</a>
                     <a href="/register" class="block py-2 mt-1 text-center bg-amber-400 px-4 rounded text-slate-950 hover:bg-amber-300 font-semibold">Register</a>
                 {% endif %}
             </div>

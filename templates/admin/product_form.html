@@ -2,12 +2,12 @@
 {% block title %}{{ 'Edit' if product else 'New' }} Product{% endblock %}
 {% block content %}
 <div class="max-w-2xl mx-auto">
-    <div class="mb-4 flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-slate-900">{{ 'Edit Product' if product else 'New Product' }}</h1>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h1 class="text-xl sm:text-2xl font-bold text-slate-900">{{ 'Edit Product' if product else 'New Product' }}</h1>
         <a href="{{ url_for('admin_products') }}" class="rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-800">Back to Products</a>
     </div>
 
-    <form method="POST" enctype="multipart/form-data" class="space-y-4 rounded bg-white p-6 shadow-sm">
+    <form method="POST" enctype="multipart/form-data" class="space-y-4 rounded bg-white p-4 sm:p-6 shadow-sm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
         <div>

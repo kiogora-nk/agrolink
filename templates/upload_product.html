@@ -6,7 +6,7 @@
     <p class="mb-4 text-sm text-slate-600">
         {% if is_admin %}Your product will be published immediately.{% else %}Your product will be reviewed by an admin before it goes live.{% endif %}
     </p>
-    <form method="POST" enctype="multipart/form-data" class="space-y-3 rounded bg-white p-6 shadow-sm">
+    <form method="POST" enctype="multipart/form-data" class="space-y-3 rounded bg-white p-4 sm:p-6 shadow-sm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input name="name" placeholder="Product Name" class="w-full rounded border p-2" required>
         <textarea name="description" placeholder="Description" rows="3" class="w-full rounded border p-2"></textarea>
@@ -24,7 +24,7 @@
         </label>
         <input type="file" name="image" accept="image/*" class="w-full rounded border p-2">
         <input name="image_url" placeholder="or Image URL (https://...)" class="w-full rounded border p-2">
-        <button type="submit" class="rounded bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-700">
+        <button type="submit" class="w-full sm:w-auto rounded bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-700">
             {% if is_admin %}Publish Product{% else %}Submit for Review{% endif %}
         </button>
     </form>

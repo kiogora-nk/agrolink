@@ -35,7 +35,11 @@ import climate_service  # Open-Meteo climate checker
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-this')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///biofarm.db')
+_database_url = os.environ.get('DATABASE_URL', 'sqlite:///biofarm.db')
+if _database_url.startswith('postgres://'):
+    # SQLAlchemy only accepts postgresql:// (Render/Heroku inject the legacy prefix).
+    _database_url = _database_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = _database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
@@ -1408,6 +1412,29 @@ def reply_message(id):
         message.read = True
         message.replied_at = utcnow()
         db.session.commit()
+
+        # Actually deliver the reply to the sender: by email always, and
+        # in-app when they have an account.
+        subject = f'Re: {message.subject or "Your message to BioFarm Fruits"}'
+        body = (
+            f'Hi {message.name or "there"},\n\n'
+            f'You wrote to BioFarm Fruits:\n'
+            f'"{message.message}"\n\n'
+            f'Our reply:\n'
+            f'{reply}\n\n'
+            f'Thank you for reaching out.\n'
+            f'BioFarm Fruits'
+        )
+        notifications.send_email(subject, message.email, body)
+        if message.user:
+            db.session.add(Notification(
+                user_id=message.user.id,
+                title='Reply to your message',
+                message=f'An admin replied to "{message.subject or "General Inquiry"}": {reply[:200]}',
+                type='message',
+            ))
+            db.session.commit()
+
         flash('Reply sent successfully!', 'success')
         return redirect(url_for('admin_messages'))
 
@@ -1421,6 +1448,17 @@ def mark_message_read(id):
     message.read = True
     db.session.commit()
     flash('Message marked as read.', 'info')
+    return redirect(url_for('admin_messages'))
+
+@app.route('/admin/message/<int:id>/delete', methods=['POST'])
+@admin_required
+def delete_message(id):
+    """Delete a contact message from the admin inbox."""
+    message = ContactMessage.query.get_or_404(id)
+    name = message.name or 'Unknown sender'
+    db.session.delete(message)
+    db.session.commit()
+    flash(f'Message from {name} deleted.', 'success')
     return redirect(url_for('admin_messages'))
 
 @app.route('/admin/products')
@@ -1617,11 +1655,44 @@ def notifications_page():
     """Customer's own notification inbox."""
     items = (Notification.query.filter_by(user_id=current_user.id)
              .order_by(Notification.created_at.desc()).all())
-    # Mark unread as read on view.
-    for n in items:
-        n.read = True
-    db.session.commit()
     return render_template('notifications.html', notifications=items)
+
+
+@app.route('/notifications/<int:id>/read', methods=['POST'])
+@login_required
+def notification_mark_read(id):
+    """Mark one of my notifications as read."""
+    notif = Notification.query.get_or_404(id)
+    if notif.user_id != current_user.id:
+        abort(403)
+    notif.read = True
+    db.session.commit()
+    flash('Notification marked as read.', 'info')
+    return redirect(url_for('notifications_page'))
+
+
+@app.route('/notifications/read-all', methods=['POST'])
+@login_required
+def notification_mark_all_read():
+    """Mark all of my notifications as read."""
+    Notification.query.filter_by(user_id=current_user.id, read=False).update(
+        {'read': True})
+    db.session.commit()
+    flash('All notifications marked as read.', 'success')
+    return redirect(url_for('notifications_page'))
+
+
+@app.route('/notifications/<int:id>/delete', methods=['POST'])
+@login_required
+def notification_delete(id):
+    """Delete one of my notifications."""
+    notif = Notification.query.get_or_404(id)
+    if notif.user_id != current_user.id:
+        abort(403)
+    db.session.delete(notif)
+    db.session.commit()
+    flash('Notification deleted.', 'success')
+    return redirect(url_for('notifications_page'))
 
 
 @app.route('/admin/reset-requests')

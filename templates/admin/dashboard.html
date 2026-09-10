@@ -9,7 +9,7 @@
         {% endif %}
     </div>
 
-    <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-6 md:grid-cols-4">
         {% set tiles = [
             ('Products', stats.products, url_for('admin_products')),
             ('Pending', stats.pending_products, url_for('admin_products')),
@@ -22,9 +22,9 @@
             ('Open errors', stats.open_errors, url_for('admin_errors')),
         ] %}
         {% for label, value, link in tiles %}
-        <div class="rounded bg-white p-5 shadow-sm {% if label == 'Open errors' and value %}ring-2 ring-red-300{% endif %}">
+        <div class="rounded bg-white p-4 shadow-sm sm:p-5 {% if label == 'Open errors' and value %}ring-2 ring-red-300{% endif %}">
             <p class="text-sm text-slate-500">{{ label }}</p>
-            <p class="mt-1 text-2xl font-bold {% if label == 'Open errors' and value %}text-red-600{% else %}text-amber-700{% endif %}">{{ value or 0 }}</p>
+            <p class="mt-1 text-xl font-bold sm:text-2xl {% if label == 'Open errors' and value %}text-red-600{% else %}text-amber-700{% endif %}">{{ value or 0 }}</p>
             {% if link %}<a href="{{ link }}" class="text-xs text-amber-700 underline">View</a>{% endif %}
         </div>
         {% endfor %}
@@ -59,6 +59,7 @@
             <a href="{{ url_for('admin_orders') }}" class="text-sm font-semibold text-amber-700 underline">Manage all orders</a>
         </div>
         {% if recent_orders %}
+        <div class="hidden md:block">
         <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 text-slate-500">
@@ -126,6 +127,52 @@
                 </tbody>
             </table>
         </div>
+        </div>
+        <div class="space-y-3 md:hidden">
+            {% for order in recent_orders %}
+            <div class="rounded border border-slate-200 p-3 text-sm">
+                <div class="flex items-start justify-between gap-2">
+                    <span class="font-mono text-xs">{{ order.receipt_number or order.id }}</span>
+                    <span class="rounded px-2 py-1 text-xs font-semibold
+                        {% if order.status == 'delivered' %}bg-green-100 text-green-800
+                        {% elif order.status == 'cancelled' %}bg-red-100 text-red-800
+                        {% elif order.status == 'confirmed' %}bg-blue-100 text-blue-800
+                        {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                        {{ order.status }}
+                    </span>
+                </div>
+                <p class="mt-1 font-semibold text-slate-900">{{ order.user.username if order.user else 'User' }}</p>
+                <p class="text-xs text-slate-500">{{ order.delivery_phone or (order.user.phone if order.user else None) or '-' }}</p>
+                {% if order.user and order.user.email %}
+                <a href="mailto:{{ order.user.email }}" class="text-xs break-all text-amber-700 underline">{{ order.user.email }}</a>
+                {% endif %}
+                <p class="mt-1 text-slate-600">{{ order.product.name if order.product else 'Product' }} &times; {{ order.quantity }} &mdash; KES {{ "{:,.0f}".format(order.total_price or 0) }}</p>
+                <p class="mt-1 text-xs text-slate-600">
+                    {% if order.delivery_address %}
+                    <span title="{{ order.delivery_address }}">{{ order.delivery_address|truncate(60) }}</span>
+                    {% else %}
+                    <span class="text-slate-400">No delivery address</span>
+                    {% endif %}
+                </p>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <form method="POST" action="{{ url_for('update_order_status', id=order.id) }}" class="flex w-full flex-wrap items-center gap-1 sm:w-auto">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <select name="status" class="flex-1 rounded border p-1 text-xs sm:flex-none">
+                            {% for s in ['pending', 'confirmed', 'delivered', 'cancelled'] %}
+                            <option value="{{ s }}" {% if order.status == s %}selected{% endif %}>{{ s }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Update</button>
+                    </form>
+                    {% set wa = wa_link(order.delivery_phone or (order.user.phone if order.user else None)) %}
+                    {% if wa %}
+                    <a href="{{ wa }}" target="_blank" rel="noopener" class="rounded bg-green-500 px-3 py-1 text-xs font-semibold text-white">WhatsApp</a>
+                    {% endif %}
+                    <a href="{{ url_for('view_receipt', id=order.id) }}" class="rounded border px-3 py-1 text-xs font-semibold text-slate-700">Receipt</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
         {% else %}
         <p class="text-slate-500">No orders yet.</p>
         {% endif %}
@@ -142,6 +189,7 @@
             <a href="{{ url_for('admin_training') }}" class="text-sm font-semibold text-amber-700 underline">Manage all training requests</a>
         </div>
         {% if recent_training %}
+        <div class="hidden md:block">
         <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
                 <thead class="border-b border-slate-200 text-slate-500">
@@ -188,6 +236,36 @@
                 </tbody>
             </table>
         </div>
+        </div>
+        <div class="space-y-3 md:hidden">
+            {% for session in recent_training %}
+            <div class="rounded border border-slate-200 p-3 text-sm">
+                <div class="flex items-start justify-between gap-2">
+                    <span class="font-semibold text-slate-900">{{ session.name }}</span>
+                    <span class="rounded px-2 py-1 text-xs font-semibold
+                        {% if session.status == 'pending' %}bg-yellow-100 text-yellow-800
+                        {% elif session.status == 'confirmed' %}bg-green-100 text-green-800
+                        {% else %}bg-gray-100 text-gray-800{% endif %}">
+                        {{ session.status }}
+                    </span>
+                </div>
+                <p class="mt-1 text-slate-600">{{ session.phone }} &middot; {{ session.session_type }}</p>
+                <p class="text-slate-500">
+                    {{ session.preferred_date.strftime('%b %d, %Y') if session.preferred_date else '-' }}
+                    {% if session.preferred_time %} · {{ session.preferred_time }}{% endif %}
+                </p>
+                <form method="POST" action="/admin/training/{{ session.id }}/update" class="mt-2 flex w-full flex-wrap items-center gap-1 sm:w-auto">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <select name="status" class="flex-1 rounded border p-1 text-xs sm:flex-none">
+                        <option value="pending" {% if session.status == 'pending' %}selected{% endif %}>pending</option>
+                        <option value="confirmed" {% if session.status == 'confirmed' %}selected{% endif %}>confirmed</option>
+                        <option value="completed" {% if session.status == 'completed' %}selected{% endif %}>completed</option>
+                    </select>
+                    <button type="submit" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Update</button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
         {% else %}
         <p class="text-slate-500">No training requests yet.</p>
         {% endif %}
@@ -201,12 +279,12 @@
         {% if messages %}
         <div class="space-y-3 text-sm">
             {% for m in messages %}
-            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                <div>
+            <div class="flex flex-col gap-2 border-b border-slate-100 pb-2 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0">
                     <p class="font-semibold text-slate-900">{{ m.name }}</p>
-                    <p class="text-slate-500">{{ m.subject or 'General Inquiry' }}</p>
+                    <p class="truncate text-slate-500" title="{{ m.subject or 'General Inquiry' }}">{{ m.subject or 'General Inquiry' }}</p>
                 </div>
-                <a href="{{ url_for('reply_message', id=m.id) }}" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Reply</a>
+                <a href="{{ url_for('reply_message', id=m.id) }}" class="self-start rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white sm:self-auto">Reply</a>
             </div>
             {% endfor %}
         </div>

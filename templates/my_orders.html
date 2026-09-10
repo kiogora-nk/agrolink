@@ -16,9 +16,9 @@
                 <p class="text-sm">Status: <span class="font-semibold capitalize">{{ order.status }}</span></p>
                 <p class="text-xs text-gray-500">{{ order.created_at.strftime('%Y-%m-%d %H:%M') if order.created_at else '' }}</p>
             </div>
-            <div class="flex flex-col gap-2">
-                <a href="{{ url_for('view_receipt', id=order.id) }}" class="border border-slate-300 text-slate-700 px-3 py-1 rounded text-sm text-center hover:bg-slate-50">View Receipt</a>
-                <a href="{{ url_for('download_receipt', id=order.id) }}" class="bg-amber-600 text-white px-3 py-1 rounded text-sm text-center hover:bg-amber-700">Download PDF</a>
+            <div class="flex flex-col gap-2 w-full sm:w-auto">
+                <a href="{{ url_for('view_receipt', id=order.id) }}" class="border border-slate-300 text-slate-700 px-3 py-2 rounded text-sm text-center hover:bg-slate-50">View Receipt</a>
+                <a href="{{ url_for('download_receipt', id=order.id) }}" class="bg-amber-600 text-white px-3 py-2 rounded text-sm text-center hover:bg-amber-700">Download PDF</a>
             </div>
         </div>
     </div>

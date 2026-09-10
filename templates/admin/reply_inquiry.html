@@ -1,9 +1,9 @@
 ﻿{% extends "base.html" %}
 {% block title %}Reply to Inquiry{% endblock %}
 {% block content %}
-<div class="max-w-2xl mx-auto bg-white p-6 rounded shadow">
-    <h2 class="text-2xl font-bold mb-4">Reply to Inquiry</h2>
-    <div class="mb-4 p-3 bg-gray-100 rounded">
+<div class="max-w-2xl mx-auto bg-white p-4 sm:p-6 rounded shadow">
+    <h2 class="text-xl sm:text-2xl font-bold mb-4">Reply to Inquiry</h2>
+    <div class="mb-4 p-3 bg-gray-100 rounded break-words">
         <p class="font-semibold">From: {{ inquiry.buyer.username }} ({{ inquiry.buyer.email }})</p>
         <p>Product: {{ inquiry.product.name }}</p>
         <p>Message: {{ inquiry.message }}</p>
@@ -11,9 +11,9 @@
     <form method="POST">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <textarea name="reply" rows="5" class="w-full border rounded p-3" placeholder="Write your reply here..." required></textarea>
-        <div class="mt-4 flex gap-3">
-            <button type="submit" class="bg-amber-600 text-white px-6 py-2 rounded">Send Reply</button>
-            <a href="{{ url_for('admin_inquiries') }}" class="bg-gray-300 text-gray-800 px-6 py-2 rounded">Back</a>
+        <div class="mt-4 flex flex-col gap-3 sm:flex-row">
+            <button type="submit" class="bg-amber-600 text-white px-6 py-2.5 rounded font-semibold hover:bg-amber-700 w-full sm:w-auto">Send Reply</button>
+            <a href="{{ url_for('admin_inquiries') }}" class="text-center bg-gray-300 text-gray-800 px-6 py-2.5 rounded w-full sm:w-auto">Back</a>
         </div>
     </form>
 </div>

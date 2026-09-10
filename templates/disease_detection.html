@@ -50,7 +50,7 @@
         <h2 class="text-lg font-bold mb-3">Your Recent Scans</h2>
         <div class="space-y-3 text-sm">
             {% for scan in recent %}
-            <div class="flex items-start justify-between border-b border-gray-100 pb-2">
+            <div class="flex items-start justify-between gap-3 border-b border-gray-100 pb-2">
                 <div>
                     <p class="font-semibold text-gray-800">{{ scan.diagnosis }}
                         <span class="font-normal text-gray-500">- {{ scan.crop_type|replace('_', ' ')|title }}</span>

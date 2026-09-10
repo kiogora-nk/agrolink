@@ -10,7 +10,7 @@
                 <p class="mt-2 text-slate-600">Dragon fruits, onions, avocado varieties, tomatoes, and more approved by Market2Farm admins.</p>
             </div>
             <form action="/search" method="GET" class="flex gap-2">
-                <input type="text" name="q" class="min-w-0 rounded border px-3 py-2" placeholder="Search produce" value="{{ request.args.get('q', '') }}">
+                <input type="text" name="q" class="min-w-0 flex-1 rounded border px-3 py-2" placeholder="Search produce" value="{{ request.args.get('q', '') }}">
                 <button type="submit" class="rounded bg-amber-500 px-4 py-2 font-semibold text-slate-950 hover:bg-amber-400">Search</button>
             </form>
         </div>

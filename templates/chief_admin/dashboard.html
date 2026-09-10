@@ -53,9 +53,9 @@
     </div>
 
     <!-- One-line pulse of the marketplace. -->
-    <div class="rounded bg-white p-6 shadow-sm">
+    <div class="rounded bg-white p-4 sm:p-6 shadow-sm">
         <h2 class="text-xl font-bold text-slate-900 mb-4">At a glance</h2>
-        <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div class="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
             {% set tiles = [
                 ('Revenue', 'KES {:,.0f}'.format(stats.revenue), 'text-amber-700'),
                 ('Orders', stats.orders, 'text-slate-900'),
@@ -67,9 +67,9 @@
                 ('Unread messages', stats.messages, 'text-amber-700'),
             ] %}
             {% for label, value, color in tiles %}
-            <div class="rounded border border-slate-100 p-4">
-                <p class="text-sm text-slate-500">{{ label }}</p>
-                <p class="mt-1 text-2xl font-bold {{ color }}">{{ value }}</p>
+            <div class="min-w-0 rounded border border-slate-100 p-3 sm:p-4">
+                <p class="text-xs sm:text-sm text-slate-500">{{ label }}</p>
+                <p class="mt-1 text-lg sm:text-2xl font-bold {{ color }} break-words">{{ value }}</p>
             </div>
             {% endfor %}
         </div>

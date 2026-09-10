@@ -12,7 +12,7 @@
                 <p class="mt-2 text-slate-600">{{ pagination.total }} products found</p>
             </div>
             <form action="/search" method="GET" class="flex flex-wrap gap-2">
-                <input type="text" name="q" value="{{ query }}" placeholder="Search produce" class="rounded border px-3 py-2">
+                <input type="text" name="q" value="{{ query }}" placeholder="Search produce" class="w-full sm:w-auto rounded border px-3 py-2">
                 <select name="category" class="rounded border px-3 py-2">
                     <option value="all" {% if selected_category == 'all' or not selected_category %}selected{% endif %}>All Categories</option>
                     {% for cat in categories %}
