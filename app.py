@@ -41,6 +41,14 @@ if _database_url.startswith('postgres://'):
     _database_url = _database_url.replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = _database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Managed Postgres hosts (Neon, Render...) close idle connections; without a
+# health check the pool hands out dead sockets and requests die with
+# "SSL connection has been closed unexpectedly". pre_ping checks each
+# connection before use and silently replaces the dead ones.
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 280,  # reuse connections before Neon's ~5min idle limit
+}
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
@@ -2838,6 +2846,34 @@ def sync_schema():
                 db.session.rollback()
                 print(f'Schema sync: skipped {table.name}.{column.name} ({exc})')
 
+def fix_id_sequences():
+    """Postgres only: re-sync each table's primary-key sequence to max(id)+1.
+
+    After data is imported with explicit ids (e.g. the SQLite -> Neon
+    migration), the sequences stay at 1 and every INSERT collides with
+    "duplicate key value violates unique constraint <table>_pkey". Running
+    setval on startup makes inserts work again, whichever table drifted.
+    Idempotent; a no-op on SQLite (auto rowid handles this itself).
+    """
+    if db.engine.name != 'postgresql':
+        return
+    from sqlalchemy import text, inspect as sa_inspect
+    inspector = sa_inspect(db.engine)
+    for table in inspector.get_table_names():
+        pk = inspector.get_pk_constraint(table)
+        cols = pk.get('constraint_columns') if pk else None
+        if not cols or len(cols) != 1:
+            continue  # only single-column integer pks use a sequence
+        col = cols[0]
+        try:
+            db.session.execute(text(
+                f"SELECT setval(pg_get_serial_sequence('{table}', '{col}'), "
+                f"COALESCE((SELECT MAX(\"{col}\") FROM \"{table}\"), 0) + 1, false)"))
+            db.session.commit()
+        except Exception as exc:  # noqa: BLE001 - table may lack a sequence
+            db.session.rollback()
+            app.logger.warning('Sequence sync skipped %s.%s: %s', table, col, exc)
+
 def backfill_uploads_to_db():
     """Copy any images sitting in the local uploads folder into the
     database so they survive the next wipe/redeploy. Idempotent: files
@@ -2883,6 +2919,7 @@ def init_db():
     with app.app_context():
         db.create_all()
         sync_schema()
+        fix_id_sequences()
         seed_data()
         backfill_uploads_to_db()
 

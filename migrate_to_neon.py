@@ -95,6 +95,20 @@ def main():
             print(f'Tables with no source counterpart (left empty): {", ".join(skipped)}')
         print(f'\nDone. {sum(copied.values())} row(s) total now on Neon.')
 
+        # Rows were copied with explicit ids, so every serial sequence is
+        # still at 1 — the next INSERT would hit a duplicate-pkey error.
+        # Push each sequence past the current max id.
+        for table in db.metadata.sorted_tables:
+            pk_cols = [c for c in table.columns if c.primary_key]
+            if len(pk_cols) != 1:
+                continue
+            col = pk_cols[0].name
+            with dst_engine.begin() as dst:
+                dst.execute(sa.text(
+                    f"SELECT setval(pg_get_serial_sequence('{table.name}', '{col}'), "
+                    f"COALESCE((SELECT MAX(\"{col}\") FROM \"{table.name}\"), 0) + 1, false)"))
+        print('Primary-key sequences re-synced.')
+
     # Quick verification pass: row counts source vs target.
     print('\nVerification (source -> neon):')
     with src_engine.connect() as s, dst_engine.connect() as d:
