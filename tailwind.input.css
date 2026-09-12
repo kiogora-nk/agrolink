@@ -1,0 +1,6 @@
+/* Input for the standalone Tailwind CLI (see build_tailwind.py).
+   The CLI scans templates/ + static/js/ and emits the used utilities to
+   static/css/tailwind.css, which base.html loads instead of the Play CDN. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

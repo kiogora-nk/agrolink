@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Test Email{% endblock %}
+{% block content %}
+<section class="max-w-xl mx-auto">
+    <div class="rounded bg-white p-6 shadow-sm">
+        <h1 class="text-2xl font-bold text-slate-900">Test Email Delivery</h1>
+        <p class="mt-2 text-sm text-slate-600">
+            Sends a real email through the configured SMTP server so delivery
+            problems can be diagnosed without digging through logs.
+        </p>
+
+        <div class="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
+            <p><span class="font-semibold">SMTP server:</span> {{ mail_server or 'not set' }}</p>
+            <p><span class="font-semibold">Username:</span> {{ mail_username or 'not set' }}</p>
+            <p><span class="font-semibold">Configured:</span>
+                {% if smtp_configured %}
+                <span class="font-semibold text-emerald-700">yes</span>
+                {% else %}
+                <span class="font-semibold text-red-700">no — set MAIL_USERNAME and MAIL_PASSWORD in the environment</span>
+                {% endif %}
+            </p>
+        </div>
+
+        <form method="POST" class="mt-4 space-y-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div>
+                <label class="block text-sm font-semibold">Send test to</label>
+                <input type="email" name="email" required
+                       value="{{ current_user.email or '' }}"
+                       class="mt-1 w-full rounded border px-3 py-2" placeholder="you@example.com">
+            </div>
+            <button type="submit" class="w-full rounded bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-700">
+                Send Test Email
+            </button>
+        </form>
+    </div>
+</section>
+{% endblock %}

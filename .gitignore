@@ -18,3 +18,7 @@ uploads/
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Tailwind build tooling (CLI downloaded at build time, CSS is committed)
+tailwind-cli.exe
+tailwind-cli*

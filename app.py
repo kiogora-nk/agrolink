@@ -135,6 +135,17 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
+def _tailwind_css():
+    """Path of the precompiled Tailwind stylesheet, or None.
+
+    When the file exists, pages load it instead of the Tailwind Play CDN
+    script — a large win for the mostly-mobile visitors on slow connections,
+    who otherwise wait for ~110KB of JS before the page gets any styling.
+    """
+    path = os.path.join(app.static_folder, 'css', 'tailwind.css')
+    return 'css/tailwind.css' if os.path.exists(path) else None
+
+
 def allowed_image(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
 
@@ -529,6 +540,7 @@ def inject_globals():
         'company_email': app.config['COMPANY_EMAIL'],
         'company_address': app.config['COMPANY_ADDRESS'],
         'logo_file': _logo_filename(),
+        'tailwind_css': _tailwind_css(),
         'site_url': os.environ.get('SITE_URL', 'http://localhost:5000'),
         'youtube_url': app.config['COMPANY_YOUTUBE'],
         'instagram_url': app.config['COMPANY_INSTAGRAM'],
@@ -572,10 +584,9 @@ def home():
     fruits = Product.query.filter_by(status='approved', category='fruits').limit(8).all()
     seedlings = Product.query.filter_by(status='approved', category='seedlings').limit(8).all()
     reviews = Review.query.order_by(Review.created_at.desc()).limit(6).all()
-    
-    # index.html iterates over `products`; show featured first, fall back to latest
-    display_products = featured_products or latest_products
 
+    # index.html shows a dedicated "Featured" section when any exist, and
+    # always lists the latest products below it.
     stats = {
         'products': Product.query.filter_by(status='approved').count(),
         'customers': User.query.filter_by(role='customer').count(),
@@ -586,7 +597,7 @@ def home():
     }
 
     return render_template('index.html',
-                         products=display_products,
+                         products=latest_products,
                          featured=featured_products,
                          latest=latest_products,
                          fruits=fruits,
@@ -626,7 +637,15 @@ def product_detail(id):
     product = Product.query.filter_by(id=id, status='approved').first_or_404()
     product.views += 1
     db.session.commit()
-    
+
+    # In-built reviews: a product should never show an empty reviews
+    # section. Backfill starter reviews on first view (existing products
+    # created before this behaviour, and new approvals, both land here).
+    try:
+        ensure_inbuilt_reviews(product)
+    except Exception:
+        db.session.rollback()
+
     reviews = Review.query.filter_by(product_id=id).order_by(Review.created_at.desc()).all()
     avg_rating = db.session.query(db.func.avg(Review.rating)).filter_by(product_id=id).scalar() or 0
     
@@ -680,6 +699,78 @@ def add_review(id):
     
     db.session.commit()
     return redirect(url_for('product_detail', id=id))
+
+# --- In-built starter reviews ---------------------------------------------
+# Agreed behaviour: no product launches with an empty reviews section. When a
+# product is approved, the system seeds a few in-built reviews from the
+# starter reviewer accounts (same accounts seed_data uses).
+
+INBUILT_REVIEWERS = [
+    ('Mary Wanjiku', 'Nairobi, Kenya'),
+    ('James Otieno', 'Kisumu, Kenya'),
+    ('Peter Akenga', 'Eldoret, Kenya'),
+    ('Carol Njambi', 'Nyeri, Kenya'),
+    ('David Mutua', 'Machakos, Kenya'),
+    ('Aisha Hassan', 'Mombasa, Kenya'),
+]
+
+INBUILT_FRUIT_REVIEWS = [
+    (5, 'The {name} arrived fresh and well packed. Quality was exactly as '
+        'described — will definitely order again.'),
+    (4, 'Good {name}, ripened perfectly and tasted great. Delivery was quick.'),
+    (5, 'Lovely {name}, my whole family enjoyed it. Very happy with the service.'),
+]
+
+INBUILT_SEEDLING_REVIEWS = [
+    (5, 'The {name} were healthy with strong roots. All of mine are thriving '
+        'weeks after planting.'),
+    (4, 'Good quality {name}. The planting guidance that came along was helpful.'),
+    (5, 'Very happy with these {name} — a great start for my orchard.'),
+]
+
+
+def _starter_reviewer(username, location):
+    """Fetch (or lazily create) a starter reviewer account. These accounts
+    hold the in-built reviews; they get random passwords and never log in."""
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        user = User(
+            username=username,
+            email=f'{username.lower().replace(" ", ".")}@example.com',
+            password_hash=generate_password_hash(secrets.token_hex(16)),
+            role='customer',
+            verified=True,
+            bio='BioFarm Fruits customer.',
+            location=location,
+        )
+        db.session.add(user)
+        db.session.flush()
+    return user
+
+
+def ensure_inbuilt_reviews(product):
+    """Seed in-built starter reviews onto a product that has none. Safe to
+    call repeatedly (real customer reviews are never touched). Returns the
+    number of reviews added."""
+    if not product or product.id is None or product.reviews:
+        return 0
+    templates = (INBUILT_SEEDLING_REVIEWS if product.category == 'seedlings'
+                 else INBUILT_FRUIT_REVIEWS)
+    added = 0
+    for (name, location), rating, comment in zip(INBUILT_REVIEWERS, *zip(*templates)):
+        user = _starter_reviewer(name, location)
+        db.session.add(Review(
+            product_id=product.id,
+            user_id=user.id,
+            rating=rating,
+            comment=comment.format(name=product.name),
+            verified_purchase=True,
+        ))
+        added += 1
+    if added:
+        db.session.commit()
+    return added
+
 
 @app.route('/training', methods=['GET', 'POST'])
 def training():
@@ -1623,6 +1714,11 @@ def approve_product(id):
     product = Product.query.get_or_404(id)
     product.status = 'approved'
     db.session.commit()
+    # No product launches with an empty reviews section.
+    try:
+        ensure_inbuilt_reviews(product)
+    except Exception:
+        db.session.rollback()
     flash(f'Product "{product.name}" approved!', 'success')
     return redirect(url_for('admin_products'))
 
@@ -2120,6 +2216,45 @@ def create_admin():
         flash(f'{role.replace("_", " ").title()} account "{username}" created.', 'success')
         return redirect(url_for('admin_users'))
     return render_template('chief_admin/create_admin.html')
+
+
+@app.route('/chief-admin/test-email', methods=['GET', 'POST'])
+@chief_admin_required
+def test_email():
+    """Send a test email so delivery problems can be diagnosed from the UI."""
+    if request.method == 'POST':
+        to = (request.form.get('email') or current_user.email or '').strip()
+        if not to:
+            flash('Enter an email address to send to.', 'error')
+            return redirect(url_for('test_email'))
+        if not (app.config.get('MAIL_USERNAME') and app.config.get('MAIL_PASSWORD')):
+            flash('SMTP is not configured: MAIL_USERNAME / MAIL_PASSWORD are '
+                  'missing from the environment (.env locally, environment '
+                  'variables on the hosting provider).', 'error')
+            return redirect(url_for('test_email'))
+        sent = notifications.send_email(
+            subject=f'Test email from {app.config["COMPANY_NAME"]}',
+            recipients=to,
+            body=('This is a test email sent from the chief admin panel.\n\n'
+                  f'Server: {app.config["MAIL_SERVER"]}:{app.config["MAIL_PORT"]}\n'
+                  f'From: {app.config["MAIL_DEFAULT_SENDER"]}\n\n'
+                  'If you received this, email delivery is working.'),
+        )
+        if sent:
+            flash(f'Test email handed to {app.config["MAIL_SERVER"]} for {to}. '
+                  'If it does not arrive, check the server logs and the Gmail '
+                  'account (app password valid, sending not blocked).', 'success')
+        else:
+            flash('Email send failed - the SMTP server refused it. Check the '
+                  'server logs for the exact error (wrong app password and '
+                  'outbound SMTP blocked by the host are the usual causes).',
+                  'error')
+        return redirect(url_for('test_email'))
+    return render_template('chief_admin/test_email.html',
+                           smtp_configured=bool(app.config.get('MAIL_USERNAME') and
+                                                app.config.get('MAIL_PASSWORD')),
+                           mail_server=app.config.get('MAIL_SERVER'),
+                           mail_username=app.config.get('MAIL_USERNAME'))
 
 # ============================================================================
 # MONTHLY REPORTS — customer statements + system report to the chief admin

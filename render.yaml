@@ -19,6 +19,24 @@ services:
       # (set NEON_DATABASE_URL first - see the header of that script).
       - key: DATABASE_URL
         sync: false
+      # --- Email (Gmail SMTP) ---
+      # Without these set in the Render dashboard, ALL email silently fails
+      # (the app fails soft and only logs). MAIL_PASSWORD is a 16-char
+      # Google App Password, not the Gmail login password.
+      - key: MAIL_SERVER
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USE_TLS
+        value: "True"
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_DEFAULT_SENDER
+        sync: false
+      - key: CHIEF_ADMIN_EMAIL
+        sync: false
       # Optional: enables image-based disease detection
       - key: CROP_VISION_API_KEY
         sync: false

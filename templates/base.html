@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-{% from "_icons.html" import social_row, icon_phone, icon_whatsapp, icon_mail %}
+{% from "_icons.html" import social_row, icon_phone, icon_whatsapp, icon_mail with context %}
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
     <meta name="csrf-token" content="{{ csrf_token }}">
     {% if logo_file %}
     <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename=logo_file) }}">
@@ -12,7 +13,11 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
     {% endif %}
     <title>BioFarm Fruits - {% block title %}{% endblock %}</title>
+    {% if tailwind_css %}
+    <link rel="stylesheet" href="{{ url_for('static', filename=tailwind_css) }}">
+    {% else %}
     <script src="https://cdn.tailwindcss.com"></script>
+    {% endif %}
     <style>
         .line-clamp-2 {
             display: -webkit-box;
@@ -40,6 +45,19 @@
             animation: spin .8s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        /* Mobile phones auto-zoom into any input rendered below 16px, which
+           made every small form field jump the whole page. Pin form controls
+           to 16px on touch-width screens; desktop keeps the compact sizes. */
+        @media (max-width: 767px) {
+            input, select, textarea {
+                font-size: 16px !important;
+            }
+        }
+        /* Respect users who prefer less motion on phones. */
+        @media (prefers-reduced-motion: reduce) {
+            .spinner { animation: none; }
+            #loading-bar { transition: none; }
+        }
     </style>
 </head>
 <body class="bg-gray-50">

@@ -1,6 +1,6 @@
 ﻿{% extends "base.html" %}
 {% from "_macros.html" import verified_badge %}
-{% from "_icons.html" import social_row %}
+{% from "_icons.html" import social_row with context %}
 {% block title %}BioFarm Fruits - Fresh Fruits & Seedlings{% endblock %}
 {% block content %}
 <section class="overflow-hidden rounded bg-slate-900 text-white shadow-sm">
@@ -22,6 +22,42 @@
         </div>
     </div>
 </section>
+
+{% if featured %}
+<section class="mt-10">
+    <div class="mb-5">
+        <p class="text-sm font-semibold uppercase tracking-wide text-amber-700">Featured</p>
+        <h2 class="text-3xl font-bold text-slate-900">Handpicked for You</h2>
+    </div>
+    <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {% for product in featured %}
+        <article class="relative overflow-hidden rounded bg-white shadow-sm ring-2 ring-amber-400">
+            <span class="absolute left-3 top-3 z-10 rounded bg-amber-400 px-2 py-1 text-xs font-bold text-slate-950 shadow">Featured</span>
+            <div class="aspect-[4/3] bg-slate-100">
+                {% if product.image %}
+                <img src="{{ image_src(product.image) }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400'">
+                {% else %}
+                <div class="flex h-full items-center justify-center text-slate-400">{{ product.name }}</div>
+                {% endif %}
+            </div>
+            <div class="p-4">
+                <h3 class="text-lg font-bold text-slate-900">{{ product.name }}</h3>
+                {% if product.farmer %}
+                <a href="{{ url_for('public_profile', username=product.farmer.username) }}" class="mt-1 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-amber-700">
+                    by {{ product.farmer.username }} {{ verified_badge(product.farmer) }}
+                </a>
+                {% endif %}
+                <p class="text-sm text-slate-600">{{ (product.description or '')[:80] }}{% if product.description and product.description|length > 80 %}...{% endif %}</p>
+                <div class="mt-4 flex items-center justify-between">
+                    <p class="font-bold text-amber-700">KES {{ "{:,.0f}".format(product.price or 0) }}</p>
+                    <a href="/product/{{ product.id }}" class="rounded bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700">View</a>
+                </div>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 
 <section class="mt-10">
     <div class="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
