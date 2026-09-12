@@ -44,6 +44,10 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+# Formats browsers can't always display (iPhone .heic photos, .jfif saved
+# from browsers, TIFF/BMP/AVIF). These are accepted but re-encoded as JPEG
+# at upload time so every stored image renders everywhere.
+CONVERTIBLE_IMAGE_EXTENSIONS = {'heic', 'heif', 'jfif', 'tif', 'tiff', 'bmp', 'avif'}
 
 # Company Settings
 app.config['COMPANY_NAME'] = os.environ.get('COMPANY_NAME', 'BioFarm Fruits')
@@ -135,35 +139,86 @@ def allowed_image(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
 
 
+def _convert_image_to_jpeg(data):
+    """Re-encode raw image bytes as JPEG. Returns (bytes, None) or (None, error)."""
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:  # pragma: no cover - Pillow is in requirements.txt
+        return None, None
+    try:
+        img = Image.open(BytesIO(data))
+        img = ImageOps.exif_transpose(img)  # honor the camera's rotation
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+        out = BytesIO()
+        img.save(out, format='JPEG', quality=90)
+        return out.getvalue(), None
+    except Exception:  # noqa: BLE001 - any decode failure means a bad file
+        return None, 'That file could not be read as an image. Please upload a JPG, PNG, WEBP or GIF picture.'
+
+
 def save_uploaded_image(file_storage):
-    """Save an uploaded image and return its stored filename, or None.
+    """Save an uploaded image and return (stored_filename, error_message).
+
+    Returns (None, None) when no file was submitted, (None, message) when
+    the file was rejected, and (filename, None) on success.
 
     The file is written to the local uploads folder (local dev, and the
     crop-disease detector reads it from there) AND stored in the database
     so the image survives restarts and redeploys on hosts like Render
     where the filesystem is wiped.
+
+    Types browsers can't display (HEIC, TIFF, BMP, ...) are converted to
+    JPEG first so they render on every device.
     """
     if not file_storage or not file_storage.filename:
-        return None
-    if not allowed_image(file_storage.filename):
-        return None
+        return None, None
+    ext = file_storage.filename.rsplit('.', 1)[1].lower() \
+        if '.' in file_storage.filename else ''
+    if ext not in ALLOWED_IMAGE_EXTENSIONS and ext not in CONVERTIBLE_IMAGE_EXTENSIONS:
+        return None, (f'".{ext}" files are not supported. '
+                      'Please upload a JPG, PNG, WEBP or GIF picture.')
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    ext = file_storage.filename.rsplit('.', 1)[1].lower()
-    filename = f"{secrets.token_hex(16)}.{ext}"
     data = file_storage.read()
+    mimetype = file_storage.mimetype or ''
+    if ext in ALLOWED_IMAGE_EXTENSIONS:
+        # Confirm the file really is a readable image (catches corrupt or
+        # misnamed uploads) without re-encoding, so valid files stay identical.
+        try:
+            from PIL import Image
+            with Image.open(BytesIO(data)) as probe:
+                probe.verify()
+        except ImportError:  # pragma: no cover - Pillow is in requirements.txt
+            pass
+        except Exception:  # noqa: BLE001 - undecodable bytes
+            return None, 'That file could not be read as an image. Please upload a JPG, PNG, WEBP or GIF picture.'
+    else:
+        if ext in ('heic', 'heif'):
+            try:
+                import pillow_heif
+                pillow_heif.register_heif_opener()
+            except ImportError:
+                return None, ('This server cannot process iPhone HEIC photos yet. '
+                              'Please upload the photo as a JPG or PNG instead.')
+        data, error = _convert_image_to_jpeg(data)
+        if error or not data:
+            return None, error or 'That image could not be processed.'
+        ext = 'jpg'
+        mimetype = 'image/jpeg'
+    filename = f"{secrets.token_hex(16)}.{ext}"
     with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'wb') as fh:
         fh.write(data)
     try:
         db.session.add(UploadedImage(
             filename=filename,
-            mimetype=file_storage.mimetype or '',
+            mimetype=mimetype,
             data=data,
         ))
         db.session.commit()
     except Exception as exc:  # noqa: BLE001 - disk copy still works
         db.session.rollback()
         app.logger.error('Failed to persist uploaded image to DB: %s', exc)
-    return filename
+    return filename, None
 
 # ============================================================================
 # MODELS - Complete Database Schema
@@ -694,7 +749,10 @@ def disease_detection():
             flash('Please describe the symptoms you are seeing.', 'error')
             return redirect(url_for('disease_detection'))
 
-        saved = save_uploaded_image(request.files.get('image'))
+        saved, image_error = save_uploaded_image(request.files.get('image'))
+        if image_error:
+            flash(image_error, 'error')
+            return redirect(url_for('disease_detection'))
 
         result = None
         if saved:
@@ -1054,7 +1112,10 @@ def profile():
         current_user.location = request.form.get('location')
         current_user.bio = request.form.get('bio')
         avatar = request.files.get('avatar')
-        saved = save_uploaded_image(avatar)
+        saved, avatar_error = save_uploaded_image(avatar)
+        if avatar_error:
+            flash(avatar_error, 'error')
+            return redirect(url_for('profile'))
         if saved:
             current_user.avatar = url_for('uploaded_file', filename=saved)
         db.session.commit()
@@ -1343,7 +1404,9 @@ def _save_product_from_form(product, form, files, allow_status=False):
         product.stock = 0
 
     image_url = (form.get('image_url') or '').strip()
-    saved = save_uploaded_image(files.get('image'))
+    saved, image_error = save_uploaded_image(files.get('image'))
+    if image_error:
+        return False, image_error
     if saved:
         product.image = url_for('uploaded_file', filename=saved)
     elif image_url:
@@ -2328,7 +2391,10 @@ def admin_blog_new():
             published=bool(request.form.get('published')),
             author_id=current_user.id,
         )
-        saved = save_uploaded_image(request.files.get('image'))
+        saved, image_error = save_uploaded_image(request.files.get('image'))
+        if image_error:
+            flash(image_error, 'error')
+            return render_template('admin/blog_form.html', post=None)
         if saved:
             post.image = url_for('uploaded_file', filename=saved)
         elif request.form.get('image_url'):
@@ -2351,7 +2417,10 @@ def admin_blog_edit(id):
         post.title = title
         post.body = request.form.get('body')
         post.published = bool(request.form.get('published'))
-        saved = save_uploaded_image(request.files.get('image'))
+        saved, image_error = save_uploaded_image(request.files.get('image'))
+        if image_error:
+            flash(image_error, 'error')
+            return render_template('admin/blog_form.html', post=post)
         if saved:
             post.image = url_for('uploaded_file', filename=saved)
         elif request.form.get('image_url'):

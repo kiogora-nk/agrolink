@@ -19,6 +19,7 @@ psycopg2-binary==2.9.9
 werkzeug==2.3.8
 requests==2.31.0
 pillow==10.1.0
+pillow-heif==0.10.1
 reportlab==4.1.0
 APScheduler==3.10.4
 qrcode==7.4.2

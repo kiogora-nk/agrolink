@@ -11,9 +11,12 @@ services:
         value: false
       - key: SITE_URL
         sync: false
-      # Attach agrolink-db to this service in the Render dashboard (Database ->
-      # Connect), which injects DATABASE_URL automatically. Or set it manually
-      # to the database's Internal Database URL.
+      # The app's database. Current setup: Neon Postgres (https://neon.tech).
+      # Paste the POOLED connection string from the Neon dashboard (the host
+      # contains "-pooler") as the value here, e.g.
+      #   postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
+      # To copy existing data over, run:  python migrate_to_neon.py
+      # (set NEON_DATABASE_URL first - see the header of that script).
       - key: DATABASE_URL
         sync: false
       # Optional: enables image-based disease detection
