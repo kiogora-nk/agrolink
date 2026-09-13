@@ -2467,23 +2467,44 @@ CONTENT_FIELDS = [
     ('hero_tagline', 'Hero tagline', 'text'),
     ('hero_title', 'Hero title', 'text'),
     ('hero_subtitle', 'Hero subtitle', 'textarea'),
+    ('hero_image_1', 'Hero image 1 (top left)', 'image'),
+    ('hero_image_2', 'Hero image 2 (top right)', 'image'),
+    ('hero_image_3', 'Hero image 3 (bottom left)', 'image'),
+    ('hero_image_4', 'Hero image 4 (bottom right)', 'image'),
     ('about_title', 'About title', 'text'),
     ('about_body', 'About body', 'textarea'),
     ('contact_note', 'Contact note', 'textarea'),
 ]
+
+# Homepage fallbacks when no hero image has been uploaded via the CMS yet.
+HERO_IMAGE_DEFAULTS = {
+    'hero_image_1': 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400',
+    'hero_image_2': 'https://images.unsplash.com/photo-1601039641847-7857b994d704?w=400',
+    'hero_image_3': 'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=400',
+    'hero_image_4': 'https://images.unsplash.com/photo-1519162808019-7de1683fa2ad?w=400',
+}
 
 @app.route('/admin/cms', methods=['GET', 'POST'])
 @admin_required
 def admin_cms():
     """Edit site content blocks shown on public pages."""
     if request.method == 'POST':
-        for key, _label, _type in CONTENT_FIELDS:
+        for key, _label, kind in CONTENT_FIELDS:
+            if kind == 'image':
+                uploaded, error = save_uploaded_image(request.files.get(key))
+                if error:
+                    flash(f'{key}: {error}', 'error')
+                elif uploaded:
+                    set_content(key, uploaded)
+                # empty upload = keep the current image (or its absence)
+                continue
             set_content(key, (request.form.get(key) or '').strip())
         db.session.commit()
         flash('Site content updated.', 'success')
         return redirect(url_for('admin_cms'))
     values = {key: get_content(key) for key, _l, _t in CONTENT_FIELDS}
-    return render_template('admin/cms.html', fields=CONTENT_FIELDS, values=values)
+    return render_template('admin/cms.html', fields=CONTENT_FIELDS, values=values,
+                           hero_defaults=HERO_IMAGE_DEFAULTS)
 
 # ============================================================================
 # CMS — blog / news

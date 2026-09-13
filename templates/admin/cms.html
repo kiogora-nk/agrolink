@@ -8,13 +8,22 @@
     </div>
     <p class="mb-4 text-slate-600">Edit the copy shown on the public homepage, about and contact sections.</p>
 
-    <form method="POST" class="space-y-4 rounded bg-white p-4 sm:p-6 shadow-sm">
+    <form method="POST" enctype="multipart/form-data" class="space-y-4 rounded bg-white p-4 sm:p-6 shadow-sm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% for key, label, kind in fields %}
         <div>
             <label class="block text-sm font-medium text-slate-700">{{ label }}</label>
             {% if kind == 'textarea' %}
             <textarea name="{{ key }}" rows="3" class="w-full rounded border p-2 focus:ring-2 focus:ring-amber-500">{{ values[key] }}</textarea>
+            {% elif kind == 'image' %}
+            <div class="mt-1 flex flex-wrap items-center gap-3">
+                <img src="{{ image_src(values[key] or hero_defaults.get(key, '')) }}" alt="{{ label }}" class="h-16 w-16 rounded border object-cover">
+                <div class="flex-1 min-w-[200px]">
+                    <input type="file" name="{{ key }}" accept="image/*" class="w-full text-sm text-slate-600
+                        file:mr-3 file:rounded file:border-0 file:bg-amber-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-amber-800">
+                    <p class="mt-1 text-xs text-slate-500">Leave empty to keep the current picture.</p>
+                </div>
+            </div>
             {% else %}
             <input name="{{ key }}" value="{{ values[key] }}" class="w-full rounded border p-2 focus:ring-2 focus:ring-amber-500">
             {% endif %}
