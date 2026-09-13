@@ -33,6 +33,10 @@
         {% if profile_user.bio %}
         <p class="mt-4 text-slate-700 break-words">{{ profile_user.bio }}</p>
         {% endif %}
+        <p class="mt-4 text-xs text-slate-500">
+            All orders and questions about {{ profile_user.username }}'s products are handled by our team.
+            <a href="{{ url_for('contact') }}" class="font-semibold text-amber-700 hover:underline">Contact us</a> and we will connect you.
+        </p>
     </div>
 
     <div>

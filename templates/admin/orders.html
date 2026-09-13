@@ -1,5 +1,44 @@
 {% extends "base.html" %}
 {% block title %}Order Management{% endblock %}
+
+{# One-click status buttons. csrf_token is passed in because inline macros
+   can't see template context ({% macro %} has no "with context"). #}
+{% macro order_status_buttons(order, csrf) %}
+    {% if order.status == 'pending' %}
+    <form method="POST" action="{{ url_for('update_order_status', id=order.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <input type="hidden" name="status" value="confirmed">
+        <button type="submit" class="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">Confirm order</button>
+    </form>
+    {% elif order.status == 'confirmed' %}
+    <form method="POST" action="{{ url_for('update_order_status', id=order.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <input type="hidden" name="status" value="delivered">
+        <button type="submit" class="rounded bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700">Mark delivered</button>
+    </form>
+    {% endif %}
+    {% if order.status in ('pending', 'confirmed') %}
+    <form method="POST" action="{{ url_for('update_order_status', id=order.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <input type="hidden" name="status" value="cancelled">
+        <button type="submit" class="rounded border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">Cancel</button>
+    </form>
+    {% endif %}
+{% endmacro %}
+
+{# Full status selector for corrections (reopening a cancelled order etc.). #}
+{% macro order_status_select(order, csrf) %}
+    <form method="POST" action="{{ url_for('update_order_status', id=order.id) }}" class="flex items-center gap-1">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <select name="status" class="rounded border p-1 text-xs">
+            {% for s in ['pending', 'confirmed', 'delivered', 'cancelled'] %}
+            <option value="{{ s }}" {% if order.status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Update</button>
+    </form>
+{% endmacro %}
+
 {% block content %}
 <section class="space-y-5">
     <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -10,9 +49,19 @@
         <a href="{{ url_for('admin_dashboard') }}" class="rounded border border-amber-700 px-4 py-2 text-sm font-semibold text-amber-800">Back to Dashboard</a>
     </div>
 
+    <form method="GET" action="{{ url_for('admin_orders') }}" class="flex flex-wrap gap-2">
+        <input type="hidden" name="status" value="{{ selected_status }}">
+        <input type="search" name="q" value="{{ search_query or '' }}" placeholder="Search receipt, customer, phone or product..."
+               class="min-w-0 flex-1 rounded border px-3 py-2 text-sm shadow-sm">
+        <button type="submit" class="rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white">Search</button>
+        {% if search_query %}
+        <a href="{{ url_for('admin_orders', status=selected_status) }}" class="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Clear</a>
+        {% endif %}
+    </form>
+
     <div class="flex flex-wrap gap-2">
         {% for key, count in counts.items() %}
-        <a href="{{ url_for('admin_orders', status=key) }}"
+        <a href="{{ url_for('admin_orders', status=key, q=search_query or None) }}"
            class="rounded-full px-4 py-1 text-sm font-semibold {% if selected_status == key %}bg-amber-600 text-white{% else %}bg-white text-slate-700 border border-slate-200{% endif %}">
             {{ key|capitalize }} ({{ count }})
         </a>
@@ -67,19 +116,11 @@
                         </span>
                     </td>
                     <td class="p-3">
-                        <div class="flex flex-wrap items-center justify-end gap-2">
+                        <div class="flex flex-wrap items-center justify-end gap-1">
+                            {{ order_status_buttons(order, csrf_token) }}
                             <button type="button" onclick="toggleOrderDetails({{ order.id }})"
-                                    class="rounded bg-amber-600 px-3 py-1 text-xs font-semibold text-white">Details</button>
-                            <form method="POST" action="{{ url_for('update_order_status', id=order.id) }}" class="flex items-center gap-1">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <select name="status" class="rounded border p-1 text-xs">
-                                    {% for s in ['pending', 'confirmed', 'delivered', 'cancelled'] %}
-                                    <option value="{{ s }}" {% if order.status == s %}selected{% endif %}>{{ s }}</option>
-                                    {% endfor %}
-                                </select>
-                                <button type="submit" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Update</button>
-                            </form>
-                            <a href="{{ url_for('view_receipt', id=order.id) }}" class="rounded border px-3 py-1 text-xs font-semibold text-slate-700">Receipt</a>
+                                    class="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Details</button>
+                            <a href="{{ url_for('view_receipt', id=order.id) }}" class="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Receipt</a>
                         </div>
                     </td>
                 </tr>
@@ -151,12 +192,16 @@
                                     {% endif %}
                                     <a href="{{ url_for('send_user_message', id=order.user_id) }}" class="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Message in app</a>
                                 </div>
+                                <div class="mt-4 border-t border-slate-200 pt-3">
+                                    <p class="mb-1 text-xs text-slate-500">Need to correct the status?</p>
+                                    {{ order_status_select(order, csrf_token) }}
+                                </div>
                             </div>
                         </div>
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="9" class="p-6 text-center text-slate-500">No orders found.</td></tr>
+                <tr><td colspan="9" class="p-6 text-center text-slate-500">{{ 'No orders match your search.' if search_query else 'No orders found.' }}</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -209,21 +254,16 @@
                 {% endif %}
                 <a href="{{ url_for('send_user_message', id=order.user_id) }}" class="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">Message in app</a>
             </div>
-            <div class="mt-3 flex flex-wrap items-center gap-2">
-                <form method="POST" action="{{ url_for('update_order_status', id=order.id) }}" class="flex w-full flex-wrap items-center gap-1 sm:w-auto">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <select name="status" class="flex-1 rounded border p-1 text-xs sm:flex-none">
-                        {% for s in ['pending', 'confirmed', 'delivered', 'cancelled'] %}
-                        <option value="{{ s }}" {% if order.status == s %}selected{% endif %}>{{ s }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit" class="rounded bg-slate-800 px-3 py-1 text-xs font-semibold text-white">Update</button>
-                </form>
-                <a href="{{ url_for('view_receipt', id=order.id) }}" class="rounded border px-3 py-1 text-xs font-semibold text-slate-700">Receipt</a>
+            <div class="mt-3 flex flex-wrap gap-1">
+                {{ order_status_buttons(order, csrf_token) }}
+            </div>
+            <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                <a href="{{ url_for('view_receipt', id=order.id) }}" class="rounded border px-3 py-1.5 text-xs font-semibold text-slate-700">Receipt</a>
+                {{ order_status_select(order, csrf_token) }}
             </div>
         </div>
         {% else %}
-        <div class="rounded bg-white p-6 text-center text-slate-500 shadow-sm">No orders found.</div>
+        <div class="rounded bg-white p-6 text-center text-slate-500 shadow-sm">{{ 'No orders match your search.' if search_query else 'No orders found.' }}</div>
         {% endfor %}
     </div>
 </section>

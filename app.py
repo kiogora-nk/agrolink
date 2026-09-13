@@ -5,12 +5,14 @@ All features working together: Products, Orders, Contact, Training, CMS, Admin
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import cast, or_
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from datetime import datetime, timedelta, timezone
 import os
+import re
 import secrets
 import json
 import base64
@@ -985,6 +987,14 @@ def register():
         if not username or not email or not password:
             flash('Please fill in all required fields.', 'error')
             return render_template('register.html')
+
+        phone = (phone or '').strip()
+        if not phone:
+            flash('Please provide a phone number — we use it to arrange your orders.', 'error')
+            return render_template('register.html')
+        if len(re.sub(r'\D', '', phone)) < 9:
+            flash('That phone number looks too short. Please enter a valid phone number.', 'error')
+            return render_template('register.html')
         
         if password != confirm:
             flash('Passwords do not match.', 'error')
@@ -1756,9 +1766,25 @@ def delete_product(id):
 def admin_orders():
     """Order management CMS - view and process all orders."""
     status = request.args.get('status')
+    q = (request.args.get('q') or '').strip()
     query = Order.query
     if status and status != 'all':
         query = query.filter_by(status=status)
+    if q:
+        like = f'%{q}%'
+        query = (query.join(User, Order.user_id == User.id, isouter=True)
+                      .join(Product, Order.product_id == Product.id, isouter=True)
+                      .filter(or_(
+                          Order.receipt_number.ilike(like),
+                          Order.order_number.ilike(like),
+                          Order.delivery_phone.ilike(like),
+                          Order.delivery_address.ilike(like),
+                          User.username.ilike(like),
+                          User.email.ilike(like),
+                          User.phone.ilike(like),
+                          Product.name.ilike(like),
+                          cast(Order.id, db.String).ilike(like),
+                      )))
     orders = query.order_by(Order.created_at.desc()).all()
     counts = {
         'all': Order.query.count(),
@@ -1768,7 +1794,8 @@ def admin_orders():
         'cancelled': Order.query.filter_by(status='cancelled').count(),
     }
     return render_template('admin/orders.html', orders=orders,
-                           counts=counts, selected_status=status or 'all')
+                           counts=counts, selected_status=status or 'all',
+                           search_query=q)
 
 
 ORDER_STATUSES = ['pending', 'confirmed', 'delivered', 'cancelled']
