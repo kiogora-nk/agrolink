@@ -2861,7 +2861,7 @@ def fix_id_sequences():
     inspector = sa_inspect(db.engine)
     for table in inspector.get_table_names():
         pk = inspector.get_pk_constraint(table)
-        cols = pk.get('constraint_columns') if pk else None
+        cols = pk.get('constrained_columns') if pk else None
         if not cols or len(cols) != 1:
             continue  # only single-column integer pks use a sequence
         col = cols[0]

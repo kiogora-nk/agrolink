@@ -18,7 +18,7 @@ insp = inspect(engine)
 with engine.begin() as c:
     for table in insp.get_table_names():
         pk = insp.get_pk_constraint(table)
-        cols = pk.get('constraint_columns') if pk else None
+        cols = pk.get('constrained_columns') if pk else None
         if not cols or len(cols) != 1:
             continue
         col = cols[0]

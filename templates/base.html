@@ -300,6 +300,7 @@
         })();
 
         // Notification bell dropdown: toggle on click, close on outside click / Esc.
+        {% if current_user.is_authenticated %}
         (function () {
             var toggle = document.getElementById('notifToggle');
             var dropdown = document.getElementById('notifDropdown');
@@ -323,6 +324,7 @@
                 }
             });
         })();
+        {% endif %}
 
         // Loading indicators: a top progress bar for link navigation and a
         // full-screen spinner while a form submits.
