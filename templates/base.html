@@ -9,8 +9,6 @@
     {% if logo_file %}
     <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename=logo_file) }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename=logo_file) }}">
-    {% else %}
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
     {% endif %}
     <title>BioFarm Fruits - {% block title %}{% endblock %}</title>
     {% if tailwind_css %}
@@ -80,6 +78,8 @@
             #sidebarBackdrop { display: none !important; }
             html[data-sidebar="collapsed"] .sidebar-brand,
             html[data-sidebar="collapsed"] .sidebar-label { display: none; }
+            /* The rail is too narrow for a search field. */
+            html[data-sidebar="collapsed"] .sidebar-search { display: none; }
             html[data-sidebar="collapsed"] .sidebar-head { justify-content: center; }
             html[data-sidebar="collapsed"] .sidebar-link {
                 justify-content: center; padding-left: 0; padding-right: 0;
@@ -138,116 +138,25 @@
         </div>
     </div>
 
-    <nav class="bg-slate-900 text-white shadow-lg">
-        <div class="container mx-auto px-4">
-            <div class="flex justify-between items-center py-3">
-                <a href="/" class="flex min-w-0 items-center gap-2 text-lg sm:text-xl font-bold">
-                    {% if logo_file %}
-                    <img src="{{ url_for('static', filename=logo_file) }}" alt="{{ company_name }} logo"
-                         class="h-9 sm:h-10 w-auto shrink-0">
-                    {% else %}
-                    <span class="flex h-9 sm:h-10 w-9 sm:w-10 shrink-0 items-center justify-center rounded-full bg-amber-400 text-2xl leading-none"
-                          aria-hidden="true">🌱</span>
-                    {% endif %}
-                    <span class="truncate">{{ company_name }}</span>
-                </a>
+    {# Phones only: the sidebar is an off-canvas drawer below 768px, so this
+       strip carries the brand and the hamburger that opens it. On desktop the
+       sidebar is always visible and no top bar is rendered at all. #}
+    <header class="sticky top-0 z-40 flex items-center justify-between gap-2 bg-slate-900 px-4 py-2.5 text-white shadow-lg md:hidden">
+        <a href="/" class="flex min-w-0 items-center gap-2">
+            {% if logo_file %}
+            <img src="{{ url_for('static', filename=logo_file) }}" alt="{{ company_name }} logo"
+                 class="h-9 w-auto shrink-0">
+            {% endif %}
+            <span class="truncate text-base font-bold">{{ company_name }}</span>
+        </a>
 
-                <!-- Mobile hamburger: opens the sidebar drawer -->
-                <button id="navToggle" class="md:hidden p-2 rounded hover:bg-slate-800 focus:outline-none"
-                        aria-label="Toggle navigation" aria-expanded="false" aria-controls="appSidebar">
-                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-                    </svg>
-                </button>
-
-                <!-- Desktop links -->
-                <div class="hidden md:flex flex-wrap items-center gap-x-5 gap-y-2">
-                    <a href="/products" class="hover:text-amber-300">Products</a>
-                    <a href="/training" class="hover:text-amber-300">Training</a>
-                    <a href="/disease-detection" class="hover:text-amber-300">Crop AI</a>
-                    <a href="/blog" class="hover:text-amber-300">Blog</a>
-                    <a href="/contact" class="hover:text-amber-300">Contact</a>
-                    <form action="/products" method="get" class="relative ml-1" role="search">
-                        <input type="search" name="search" value=""
-                               placeholder="Search products..." aria-label="Search products"
-                               class="w-44 rounded-full border border-amber-400/60 bg-white/10 px-4 py-1.5 pr-8 text-sm text-white placeholder-amber-200/80 focus:w-56 focus:bg-white/20 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all">
-                        <button type="submit" aria-label="Search"
-                                class="absolute right-2 top-1/2 -translate-y-1/2 text-amber-300 hover:text-white">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                            </svg>
-                        </button>
-                    </form>
-                    {% if current_user.is_authenticated %}
-                        {% if current_user.can_manage_products() %}
-                            <a href="/upload-product" class="hover:text-amber-300">Add Product</a>
-                        {% endif %}
-                        {% if current_user.is_chief_admin() %}
-                            <a href="/chief-admin/dashboard" class="hover:text-amber-300">Chief Admin</a>
-                        {% elif current_user.is_admin() %}
-                            <a href="/admin/dashboard" class="hover:text-amber-300">Admin</a>
-                        {% endif %}
-                        <a href="/dashboard" class="hover:text-amber-300">Dashboard</a>
-
-                        <!-- Notification bell -->
-                        <div class="relative" id="notifBell">
-                            <button type="button" id="notifToggle"
-                                    class="relative p-2 rounded-full text-amber-300 hover:text-white hover:bg-slate-800 focus:outline-none"
-                                    aria-label="Notifications ({{ unread_notifications }} unread)"
-                                    aria-haspopup="true" aria-expanded="false">
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-4-5.7V5a2 2 0 10-4 0v.3A6 6 0 006 11v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-                                </svg>
-                                {% if unread_notifications %}
-                                <span class="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                                    {{ unread_notifications if unread_notifications < 10 else '9+' }}
-                                </span>
-                                {% endif %}
-                            </button>
-                            <!-- Dropdown -->
-                            <div id="notifDropdown" class="hidden absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white text-slate-900 shadow-xl z-50">
-                                <div class="flex items-center justify-between border-b px-4 py-3">
-                                    <span class="font-bold">Notifications</span>
-                                    {% if unread_notifications %}
-                                    <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">{{ unread_notifications }} new</span>
-                                    {% endif %}
-                                </div>
-                                <div class="max-h-72 overflow-y-auto">
-                                    {% for n in recent_notifications %}
-                                    <div class="border-b px-4 py-3 text-sm {% if not n.read %}bg-amber-50{% endif %}">
-                                        {% if n.title %}<p class="font-semibold">{{ n.title }}</p>{% endif %}
-                                        <p class="text-slate-600">{{ n.message }}</p>
-                                        <small class="text-gray-400">{{ n.created_at.strftime('%b %d, %Y') if n.created_at else '' }}</small>
-                                    </div>
-                                    {% else %}
-                                    <div class="px-4 py-6 text-center text-sm text-gray-500">No notifications yet.</div>
-                                    {% endfor %}
-                                </div>
-                                <a href="/notifications" class="block bg-slate-50 py-2.5 text-center text-sm font-semibold text-amber-700 hover:bg-slate-100">View all notifications</a>
-                            </div>
-                        </div>
-
-                        <!-- Profile picture -->
-                        <a href="/profile" class="flex items-center hover:opacity-80" title="My profile" aria-label="My profile">
-                            {% if current_user.avatar %}
-                            <img src="{{ current_user.avatar }}" alt="{{ current_user.username }}"
-                                 class="h-9 w-9 rounded-full border-2 border-amber-400 object-cover">
-                            {% else %}
-                            <span class="flex h-9 w-9 items-center justify-center rounded-full border-2 border-amber-400 bg-slate-800 text-sm font-bold text-amber-300">
-                                {{ current_user.username[0].upper() }}
-                            </span>
-                            {% endif %}
-                        </a>
-                        <a href="/logout" class="hover:text-amber-300">Logout</a>
-                    {% else %}
-                        <a href="/login" class="hover:text-amber-300">Login</a>
-                        <a href="/register" class="bg-amber-400 px-4 py-2 rounded text-slate-950 hover:bg-amber-300 font-semibold">Register</a>
-                    {% endif %}
-                </div>
-            </div>
-
-        </div>
-    </nav>
+        <button id="navToggle" class="shrink-0 rounded p-2 hover:bg-slate-800 focus:outline-none"
+                aria-label="Toggle navigation" aria-expanded="false" aria-controls="appSidebar">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+        </button>
+    </header>
 
     <div class="md:flex md:items-start">
         {% include "_sidebar.html" %}
@@ -376,33 +285,6 @@
                 });
             }
         })();
-
-        // Notification bell dropdown: toggle on click, close on outside click / Esc.
-        {% if current_user.is_authenticated %}
-        (function () {
-            var toggle = document.getElementById('notifToggle');
-            var dropdown = document.getElementById('notifDropdown');
-            if (!toggle || !dropdown) return;
-            toggle.addEventListener('click', function (e) {
-                e.stopPropagation();
-                var open = dropdown.classList.toggle('hidden') === false;
-                toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-            });
-            document.addEventListener('click', function (e) {
-                if (!dropdown.classList.contains('hidden') &&
-                    !document.getElementById('notifBell').contains(e.target)) {
-                    dropdown.classList.add('hidden');
-                    toggle.setAttribute('aria-expanded', 'false');
-                }
-            });
-            document.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape' && !dropdown.classList.contains('hidden')) {
-                    dropdown.classList.add('hidden');
-                    toggle.setAttribute('aria-expanded', 'false');
-                }
-            });
-        })();
-        {% endif %}
 
         // Loading indicators: a top progress bar for link navigation and a
         // full-screen spinner while a form submits.

@@ -56,6 +56,9 @@ ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 # Company Settings
 app.config['COMPANY_NAME'] = os.environ.get('COMPANY_NAME', 'BioFarm Fruits')
+# Path under static/ to the brand mark shown in the sidebar, the phone header,
+# the login card, the receipt and the favicon.
+app.config['COMPANY_LOGO'] = os.environ.get('COMPANY_LOGO', 'img/logo.png.jpg')
 app.config['COMPANY_PHONE'] = os.environ.get('COMPANY_PHONE', '0746767123')
 app.config['COMPANY_PHONE_ALT'] = os.environ.get('COMPANY_PHONE_ALT', '0745395981')
 app.config['COMPANY_WHATSAPP'] = os.environ.get('COMPANY_WHATSAPP', '0746767123')
@@ -482,11 +485,28 @@ def image_src(value):
 # CONTEXT PROCESSOR - Makes global variables available in all templates
 # ============================================================================
 
+def _unread_notification_count():
+    """Unread count for the sidebar badge.
+
+    Runs on every request, including the 404/500 handlers that render
+    base.html, so it must never raise: a database hiccup would otherwise turn
+    an error page into a second error.
+    """
+    if not current_user.is_authenticated:
+        return 0
+    try:
+        return Notification.query.filter_by(user_id=current_user.id, read=False).count()
+    except Exception:
+        return 0
+
+
 @app.context_processor
 def inject_globals():
     return {
         'current_user': current_user,
         'company_name': app.config['COMPANY_NAME'],
+        'logo_file': app.config['COMPANY_LOGO'],
+        'unread_notifications': _unread_notification_count(),
         'company_phone': app.config['COMPANY_PHONE'],
         'company_phone_alt': app.config['COMPANY_PHONE_ALT'],
         'company_whatsapp': app.config['COMPANY_WHATSAPP'],
@@ -540,6 +560,17 @@ def home():
     # index.html iterates over `products`; show featured first, fall back to latest
     display_products = featured_products or latest_products
 
+    # Hero tiles: real product photos, not stock imagery. A featured product
+    # also appears in `latest`, so dedupe by id and keep the featured-first
+    # order. Products without a picture are skipped rather than filled in.
+    hero_products, seen_ids = [], set()
+    for product in featured_products + latest_products:
+        if product.image and product.id not in seen_ids:
+            seen_ids.add(product.id)
+            hero_products.append(product)
+        if len(hero_products) == 4:
+            break
+
     stats = {
         'products': Product.query.filter_by(status='approved').count(),
         'customers': User.query.filter_by(role='customer').count(),
@@ -553,6 +584,7 @@ def home():
                          products=display_products,
                          featured=featured_products,
                          latest=latest_products,
+                         hero_products=hero_products,
                          fruits=fruits,
                          seedlings=seedlings,
                          reviews=reviews,
