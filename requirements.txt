@@ -14,6 +14,8 @@ itsdangerous==2.1.2
 # Database
 SQLAlchemy==2.0.23
 psycopg2-binary==2.9.9
+pymongo==4.18.2
+dnspython==2.8.0        # required by pymongo for mongodb+srv:// Atlas URIs
 
 # Utils
 werkzeug==2.3.8

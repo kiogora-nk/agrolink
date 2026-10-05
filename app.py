@@ -2,23 +2,22 @@
 BioFarm Fruits - Complete Integrated Application
 All features working together: Products, Orders, Contact, Training, CMS, Admin
 """
+import os
 
+from dotenv import load_dotenv
+from pymongo import MongoClient
+
+load_dotenv()
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import cast, or_
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from datetime import datetime, timedelta, timezone
 import os
-import re
 import secrets
 import json
-import base64
-from io import BytesIO
-
-import qrcode
 
 try:
     from dotenv import load_dotenv
@@ -30,6 +29,18 @@ import crop_ai  # trained crop-disease classifier (local module, no heavy deps)
 import notifications  # email + WhatsApp/SMS link helpers
 import pdf_reports  # receipt / monthly-report PDF + CSV builders
 import climate_service  # Open-Meteo climate checker
+MONGODB_URI = os.getenv("MONGODB_URI")
+MONGODB_DB = os.getenv("MONGODB_DB", "agrolink")
+
+mongo_client = MongoClient(
+    MONGODB_URI,
+    serverSelectionTimeoutMS=5000
+)
+
+mongo_db = mongo_client[MONGODB_DB]
+users_collection = mongo_db["users"]
+ai_results_collection = mongo_db["ai_results"]
+chat_collection = mongo_db["chat_messages"]
 
 # ============================================================================
 # APP INITIALIZATION
@@ -37,27 +48,11 @@ import climate_service  # Open-Meteo climate checker
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-this')
-_database_url = os.environ.get('DATABASE_URL', 'sqlite:///biofarm.db')
-if _database_url.startswith('postgres://'):
-    # SQLAlchemy only accepts postgresql:// (Render/Heroku inject the legacy prefix).
-    _database_url = _database_url.replace('postgres://', 'postgresql://', 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = _database_url
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///biofarm.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Managed Postgres hosts (Neon, Render...) close idle connections; without a
-# health check the pool hands out dead sockets and requests die with
-# "SSL connection has been closed unexpectedly". pre_ping checks each
-# connection before use and silently replaces the dead ones.
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,
-    'pool_recycle': 280,  # reuse connections before Neon's ~5min idle limit
-}
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-# Formats browsers can't always display (iPhone .heic photos, .jfif saved
-# from browsers, TIFF/BMP/AVIF). These are accepted but re-encoded as JPEG
-# at upload time so every stored image renders everywhere.
-CONVERTIBLE_IMAGE_EXTENSIONS = {'heic', 'heif', 'jfif', 'tif', 'tiff', 'bmp', 'avif'}
 
 # Company Settings
 app.config['COMPANY_NAME'] = os.environ.get('COMPANY_NAME', 'BioFarm Fruits')
@@ -69,10 +64,6 @@ app.config['COMPANY_EMAIL'] = os.environ.get('COMPANY_EMAIL', 'biofreshf@gmail.c
 app.config['COMPANY_ADDRESS'] = os.environ.get('COMPANY_ADDRESS', 'Nairobi, Kenya')
 app.config['COMPANY_TIKTOK'] = os.environ.get('COMPANY_TIKTOK', 'https://www.tiktok.com/@dragon_fruit_012')
 app.config['COMPANY_YOUTUBE'] = os.environ.get('COMPANY_YOUTUBE', 'https://www.youtube.com/@bio_fresh_orchard')
-app.config['COMPANY_FACEBOOK'] = os.environ.get('COMPANY_FACEBOOK', '#')
-app.config['COMPANY_INSTAGRAM'] = os.environ.get('COMPANY_INSTAGRAM', '#')
-app.config['COMPANY_X'] = os.environ.get('COMPANY_X', '#')
-app.config['COMPANY_LINKEDIN'] = os.environ.get('COMPANY_LINKEDIN', '#')
 
 # The chief admin who must always receive system receipts and monthly reports.
 app.config['CHIEF_ADMIN_EMAIL'] = os.environ.get('CHIEF_ADMIN_EMAIL', 'kiogo951@gmail.com')
@@ -145,101 +136,21 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
-def _tailwind_css():
-    """Path of the precompiled Tailwind stylesheet, or None.
-
-    When the file exists, pages load it instead of the Tailwind Play CDN
-    script — a large win for the mostly-mobile visitors on slow connections,
-    who otherwise wait for ~110KB of JS before the page gets any styling.
-    """
-    path = os.path.join(app.static_folder, 'css', 'tailwind.css')
-    return 'css/tailwind.css' if os.path.exists(path) else None
-
-
 def allowed_image(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
 
 
-def _convert_image_to_jpeg(data):
-    """Re-encode raw image bytes as JPEG. Returns (bytes, None) or (None, error)."""
-    try:
-        from PIL import Image, ImageOps
-    except ImportError:  # pragma: no cover - Pillow is in requirements.txt
-        return None, None
-    try:
-        img = Image.open(BytesIO(data))
-        img = ImageOps.exif_transpose(img)  # honor the camera's rotation
-        if img.mode not in ('RGB', 'L'):
-            img = img.convert('RGB')
-        out = BytesIO()
-        img.save(out, format='JPEG', quality=90)
-        return out.getvalue(), None
-    except Exception:  # noqa: BLE001 - any decode failure means a bad file
-        return None, 'That file could not be read as an image. Please upload a JPG, PNG, WEBP or GIF picture.'
-
-
 def save_uploaded_image(file_storage):
-    """Save an uploaded image and return (stored_filename, error_message).
-
-    Returns (None, None) when no file was submitted, (None, message) when
-    the file was rejected, and (filename, None) on success.
-
-    The file is written to the local uploads folder (local dev, and the
-    crop-disease detector reads it from there) AND stored in the database
-    so the image survives restarts and redeploys on hosts like Render
-    where the filesystem is wiped.
-
-    Types browsers can't display (HEIC, TIFF, BMP, ...) are converted to
-    JPEG first so they render on every device.
-    """
+    """Save an uploaded image and return its stored filename, or None."""
     if not file_storage or not file_storage.filename:
-        return None, None
-    ext = file_storage.filename.rsplit('.', 1)[1].lower() \
-        if '.' in file_storage.filename else ''
-    if ext not in ALLOWED_IMAGE_EXTENSIONS and ext not in CONVERTIBLE_IMAGE_EXTENSIONS:
-        return None, (f'".{ext}" files are not supported. '
-                      'Please upload a JPG, PNG, WEBP or GIF picture.')
+        return None
+    if not allowed_image(file_storage.filename):
+        return None
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    data = file_storage.read()
-    mimetype = file_storage.mimetype or ''
-    if ext in ALLOWED_IMAGE_EXTENSIONS:
-        # Confirm the file really is a readable image (catches corrupt or
-        # misnamed uploads) without re-encoding, so valid files stay identical.
-        try:
-            from PIL import Image
-            with Image.open(BytesIO(data)) as probe:
-                probe.verify()
-        except ImportError:  # pragma: no cover - Pillow is in requirements.txt
-            pass
-        except Exception:  # noqa: BLE001 - undecodable bytes
-            return None, 'That file could not be read as an image. Please upload a JPG, PNG, WEBP or GIF picture.'
-    else:
-        if ext in ('heic', 'heif'):
-            try:
-                import pillow_heif
-                pillow_heif.register_heif_opener()
-            except ImportError:
-                return None, ('This server cannot process iPhone HEIC photos yet. '
-                              'Please upload the photo as a JPG or PNG instead.')
-        data, error = _convert_image_to_jpeg(data)
-        if error or not data:
-            return None, error or 'That image could not be processed.'
-        ext = 'jpg'
-        mimetype = 'image/jpeg'
+    ext = file_storage.filename.rsplit('.', 1)[1].lower()
     filename = f"{secrets.token_hex(16)}.{ext}"
-    with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'wb') as fh:
-        fh.write(data)
-    try:
-        db.session.add(UploadedImage(
-            filename=filename,
-            mimetype=mimetype,
-            data=data,
-        ))
-        db.session.commit()
-    except Exception as exc:  # noqa: BLE001 - disk copy still works
-        db.session.rollback()
-        app.logger.error('Failed to persist uploaded image to DB: %s', exc)
-    return filename, None
+    file_storage.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    return filename
 
 # ============================================================================
 # MODELS - Complete Database Schema
@@ -258,9 +169,6 @@ class User(UserMixin, db.Model):
     location = db.Column(db.String(120))
     verified = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=True)
-    # Batch number granted by the chief admin once a chief admin has proven
-    # themselves through usage — shown as an official branch/identity ID.
-    batch_number = db.Column(db.String(20), unique=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     last_login = db.Column(db.DateTime)
 
@@ -372,24 +280,8 @@ class Notification(db.Model):
     type = db.Column(db.String(50))
     read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=utcnow)
-
+    
     user = db.relationship('User', backref='notifications')
-
-class UploadedImage(db.Model):
-    """An uploaded image stored in the database.
-
-    The web server's filesystem on hosts like Render is ephemeral: every
-    restart or deploy wipes locally saved files. Keeping image bytes in
-    the database (which lives on managed Postgres) makes uploads survive
-    redeploys. The /uploads/<filename> route serves from here first and
-    falls back to the local folder for legacy files.
-    """
-    __tablename__ = 'uploaded_images'
-    id = db.Column(db.Integer, primary_key=True)
-    filename = db.Column(db.String(80), unique=True, nullable=False, index=True)
-    mimetype = db.Column(db.String(50))
-    data = db.Column(db.LargeBinary, nullable=False)
-    created_at = db.Column(db.DateTime, default=utcnow)
 
 class DiseaseDetection(db.Model):
     """A crop disease diagnosis produced by the AI detector (crop_ai)."""
@@ -534,6 +426,58 @@ def set_content(key, value):
     else:
         db.session.add(SiteContent(key=key, value=value))
 
+
+# Neutral placeholder for records with no picture. A data: URI so an
+# image-less product costs no extra request and never shows a broken icon.
+IMAGE_PLACEHOLDER = (
+    "data:image/svg+xml;utf8,"
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>"
+    "<rect width='64' height='64' fill='%23f1f5f9'/>"
+    "<path d='M20 42l9-11 7 8 5-6 8 9H20z' fill='%23cbd5e1'/>"
+    "<circle cx='24' cy='22' r='4' fill='%23cbd5e1'/>"
+    "</svg>"
+)
+
+
+def _upload_still_on_disk(path):
+    """True when a '/uploads/<file>' path still has its file under UPLOAD_FOLDER.
+
+    Rows outlive their files: a record can keep pointing at an upload that was
+    never copied off the dev machine, or that a redeploy wiped. The templates
+    cannot tell -- they only see a URL -- so the check belongs here.
+    """
+    name = path[len('/uploads/'):]
+    if not name:
+        return False
+    return os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], name))
+
+
+def image_src(value):
+    """Resolve a stored image value into a URL the browser can load.
+
+    Stored values are inconsistent: uploads are written as
+    url_for('uploaded_file', ...) -> '/uploads/<file>', while other writes and
+    older rows hold a bare filename or a full external URL. Normalise all of
+    them, and fall back to a neutral placeholder when nothing usable is set --
+    both for records with no picture and for records whose upload has gone
+    missing, which would otherwise render as a broken-image icon (or, where the
+    template carries an onerror fallback, as an unrelated stock photo).
+    """
+    value = ('' if value is None else str(value)).strip()
+    if not value:
+        return IMAGE_PLACEHOLDER
+    # Absolute, inline or protocol-relative: not ours to verify.
+    if value.startswith(('http://', 'https://', 'data:', '//')):
+        return value
+    # Root-relative: only our own /uploads/ paths can go stale.
+    if value.startswith('/'):
+        if value.startswith('/uploads/') and not _upload_still_on_disk(value):
+            return IMAGE_PLACEHOLDER
+        return value
+    # Bare filename from an older record -> serve it from /uploads.
+    url = url_for('uploaded_file', filename=value)
+    return url if _upload_still_on_disk(url) else IMAGE_PLACEHOLDER
+
 # ============================================================================
 # CONTEXT PROCESSOR - Makes global variables available in all templates
 # ============================================================================
@@ -549,15 +493,11 @@ def inject_globals():
         'company_whatsapp_alt': app.config['COMPANY_WHATSAPP_ALT'],
         'company_email': app.config['COMPANY_EMAIL'],
         'company_address': app.config['COMPANY_ADDRESS'],
-        'logo_file': _logo_filename(),
-        'tailwind_css': _tailwind_css(),
         'site_url': os.environ.get('SITE_URL', 'http://localhost:5000'),
         'youtube_url': app.config['COMPANY_YOUTUBE'],
-        'instagram_url': app.config['COMPANY_INSTAGRAM'],
-        'facebook_url': app.config['COMPANY_FACEBOOK'],
+        'instagram_url': os.environ.get('INSTAGRAM_URL', '#'),
+        'facebook_url': os.environ.get('FACEBOOK_URL', '#'),
         'tiktok_url': app.config['COMPANY_TIKTOK'],
-        'x_url': app.config['COMPANY_X'],
-        'linkedin_url': app.config['COMPANY_LINKEDIN'],
         'whatsapp_url': notifications.whatsapp_link(app.config['COMPANY_WHATSAPP']),
         'whatsapp_url_alt': notifications.whatsapp_link(app.config['COMPANY_WHATSAPP_ALT']),
         'wa_link': notifications.whatsapp_link,
@@ -565,27 +505,29 @@ def inject_globals():
         'tel_link': notifications.tel_link,
         'csrf_token': generate_csrf(),
         'content': get_content,
-        'now': utcnow(),
-        # Resolve a stored product image value into a usable <img src>,
-        # whichever format it is: full URL (/uploads/..., http(s)://...) or
-        # a legacy bare uploaded filename.
-        'image_src': lambda value: (
-            value if not value or value.startswith(('http://', 'https://', '/', 'data:'))
-            else url_for('uploaded_file', filename=value)),
-        # Notification bell in the navbar: unread count + latest items.
-        'unread_notifications': (
-            Notification.query.filter_by(user_id=current_user.id, read=False).count()
-            if current_user.is_authenticated else 0),
-        'recent_notifications': (
-            Notification.query.filter_by(user_id=current_user.id)
-                .order_by(Notification.created_at.desc()).limit(5).all()
-            if current_user.is_authenticated else []),
+        'image_src': image_src,
+        'now': utcnow()
     }
 
 # ============================================================================
 # PUBLIC ROUTES
 # ============================================================================
+@app.route("/mongo-test")
+def mongo_test():
+    try:
+        mongo_client.admin.command("ping")
 
+        return {
+            "status": "success",
+            "message": "MongoDB Atlas is connected",
+            "database": MONGODB_DB
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
 @app.route('/')
 def home():
     """Homepage - Featured products and statistics"""
@@ -594,9 +536,10 @@ def home():
     fruits = Product.query.filter_by(status='approved', category='fruits').limit(8).all()
     seedlings = Product.query.filter_by(status='approved', category='seedlings').limit(8).all()
     reviews = Review.query.order_by(Review.created_at.desc()).limit(6).all()
+    
+    # index.html iterates over `products`; show featured first, fall back to latest
+    display_products = featured_products or latest_products
 
-    # index.html shows a dedicated "Featured" section when any exist, and
-    # always lists the latest products below it.
     stats = {
         'products': Product.query.filter_by(status='approved').count(),
         'customers': User.query.filter_by(role='customer').count(),
@@ -607,7 +550,7 @@ def home():
     }
 
     return render_template('index.html',
-                         products=latest_products,
+                         products=display_products,
                          featured=featured_products,
                          latest=latest_products,
                          fruits=fruits,
@@ -647,15 +590,7 @@ def product_detail(id):
     product = Product.query.filter_by(id=id, status='approved').first_or_404()
     product.views += 1
     db.session.commit()
-
-    # In-built reviews: a product should never show an empty reviews
-    # section. Backfill starter reviews on first view (existing products
-    # created before this behaviour, and new approvals, both land here).
-    try:
-        ensure_inbuilt_reviews(product)
-    except Exception:
-        db.session.rollback()
-
+    
     reviews = Review.query.filter_by(product_id=id).order_by(Review.created_at.desc()).all()
     avg_rating = db.session.query(db.func.avg(Review.rating)).filter_by(product_id=id).scalar() or 0
     
@@ -710,78 +645,6 @@ def add_review(id):
     db.session.commit()
     return redirect(url_for('product_detail', id=id))
 
-# --- In-built starter reviews ---------------------------------------------
-# Agreed behaviour: no product launches with an empty reviews section. When a
-# product is approved, the system seeds a few in-built reviews from the
-# starter reviewer accounts (same accounts seed_data uses).
-
-INBUILT_REVIEWERS = [
-    ('Mary Wanjiku', 'Nairobi, Kenya'),
-    ('James Otieno', 'Kisumu, Kenya'),
-    ('Peter Akenga', 'Eldoret, Kenya'),
-    ('Carol Njambi', 'Nyeri, Kenya'),
-    ('David Mutua', 'Machakos, Kenya'),
-    ('Aisha Hassan', 'Mombasa, Kenya'),
-]
-
-INBUILT_FRUIT_REVIEWS = [
-    (5, 'The {name} arrived fresh and well packed. Quality was exactly as '
-        'described — will definitely order again.'),
-    (4, 'Good {name}, ripened perfectly and tasted great. Delivery was quick.'),
-    (5, 'Lovely {name}, my whole family enjoyed it. Very happy with the service.'),
-]
-
-INBUILT_SEEDLING_REVIEWS = [
-    (5, 'The {name} were healthy with strong roots. All of mine are thriving '
-        'weeks after planting.'),
-    (4, 'Good quality {name}. The planting guidance that came along was helpful.'),
-    (5, 'Very happy with these {name} — a great start for my orchard.'),
-]
-
-
-def _starter_reviewer(username, location):
-    """Fetch (or lazily create) a starter reviewer account. These accounts
-    hold the in-built reviews; they get random passwords and never log in."""
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        user = User(
-            username=username,
-            email=f'{username.lower().replace(" ", ".")}@example.com',
-            password_hash=generate_password_hash(secrets.token_hex(16)),
-            role='customer',
-            verified=True,
-            bio='BioFarm Fruits customer.',
-            location=location,
-        )
-        db.session.add(user)
-        db.session.flush()
-    return user
-
-
-def ensure_inbuilt_reviews(product):
-    """Seed in-built starter reviews onto a product that has none. Safe to
-    call repeatedly (real customer reviews are never touched). Returns the
-    number of reviews added."""
-    if not product or product.id is None or product.reviews:
-        return 0
-    templates = (INBUILT_SEEDLING_REVIEWS if product.category == 'seedlings'
-                 else INBUILT_FRUIT_REVIEWS)
-    added = 0
-    for (name, location), rating, comment in zip(INBUILT_REVIEWERS, *zip(*templates)):
-        user = _starter_reviewer(name, location)
-        db.session.add(Review(
-            product_id=product.id,
-            user_id=user.id,
-            rating=rating,
-            comment=comment.format(name=product.name),
-            verified_purchase=True,
-        ))
-        added += 1
-    if added:
-        db.session.commit()
-    return added
-
-
 @app.route('/training', methods=['GET', 'POST'])
 def training():
     """Training booking page"""
@@ -826,10 +689,6 @@ def contact():
         )
         db.session.add(msg)
         db.session.commit()
-
-        # Alert admins by email (and in-app) so nothing sits unread.
-        _notify_admins_new_message(msg)
-
         flash('Your message has been sent! We will respond within 24 hours.', 'success')
         return redirect(url_for('contact'))
     
@@ -850,10 +709,7 @@ def disease_detection():
             flash('Please describe the symptoms you are seeing.', 'error')
             return redirect(url_for('disease_detection'))
 
-        saved, image_error = save_uploaded_image(request.files.get('image'))
-        if image_error:
-            flash(image_error, 'error')
-            return redirect(url_for('disease_detection'))
+        saved = save_uploaded_image(request.files.get('image'))
 
         result = None
         if saved:
@@ -959,7 +815,7 @@ def login():
             login_user(user)
             user.last_login = utcnow()
             db.session.commit()
-            flash(f'Welcome, {user.username}!', 'success')
+            flash('Welcome back!', 'success')
             return redirect(request.args.get('next') or url_for('home'))
         
         flash('Invalid username or password.', 'error')
@@ -986,14 +842,6 @@ def register():
 
         if not username or not email or not password:
             flash('Please fill in all required fields.', 'error')
-            return render_template('register.html')
-
-        phone = (phone or '').strip()
-        if not phone:
-            flash('Please provide a phone number — we use it to arrange your orders.', 'error')
-            return render_template('register.html')
-        if len(re.sub(r'\D', '', phone)) < 9:
-            flash('That phone number looks too short. Please enter a valid phone number.', 'error')
             return render_template('register.html')
         
         if password != confirm:
@@ -1221,37 +1069,13 @@ def profile():
         current_user.location = request.form.get('location')
         current_user.bio = request.form.get('bio')
         avatar = request.files.get('avatar')
-        saved, avatar_error = save_uploaded_image(avatar)
-        if avatar_error:
-            flash(avatar_error, 'error')
-            return redirect(url_for('profile'))
+        saved = save_uploaded_image(avatar)
         if saved:
             current_user.avatar = url_for('uploaded_file', filename=saved)
         db.session.commit()
         flash('Profile updated.', 'success')
         return redirect(url_for('profile'))
     return render_template('profile.html', user=current_user)
-
-@app.route('/change-password', methods=['POST'])
-@login_required
-def change_password():
-    """Let a signed-in user change their own password."""
-    current_password = request.form.get('current_password', '')
-    new_password = request.form.get('new_password', '')
-    confirm_password = request.form.get('confirm_password', '')
-
-    if not current_user.password_hash or \
-            not check_password_hash(current_user.password_hash, current_password):
-        flash('Your current password is incorrect.', 'error')
-    elif len(new_password) < 6:
-        flash('New password must be at least 6 characters long.', 'error')
-    elif new_password != confirm_password:
-        flash('New passwords do not match.', 'error')
-    else:
-        current_user.password_hash = generate_password_hash(new_password)
-        db.session.commit()
-        flash('Your password has been changed successfully.', 'success')
-    return redirect(url_for('profile'))
 
 @app.route('/u/<username>')
 def public_profile(username):
@@ -1271,13 +1095,7 @@ def public_profile(username):
 
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    """Serve uploaded images - from the database first (images survive
-    redeploys there), falling back to the local uploads folder."""
-    img = UploadedImage.query.filter_by(filename=filename).first()
-    if img and img.data:
-        mimetype = img.mimetype if img.mimetype and img.mimetype.startswith('image/') else 'image/jpeg'
-        return send_file(BytesIO(img.data), mimetype=mimetype,
-                         max_age=86400)
+    """Serve uploaded images."""
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 @app.route('/order/<int:id>/receipt')
@@ -1288,8 +1106,7 @@ def view_receipt(id):
     if order.user_id != current_user.id and not current_user.is_admin():
         flash('Unauthorized.', 'error')
         return redirect(url_for('home'))
-    return render_template('receipt.html', order=order,
-                           qr_data_uri=_receipt_qr_data_uri(order))
+    return render_template('receipt.html', order=order)
 
 @app.route('/order/<int:id>/download-receipt')
 @login_required
@@ -1310,24 +1127,6 @@ def download_receipt(id):
     )
 
 
-def _logo_filename():
-    """Static-relative path of the brand logo, whichever filename it was
-    uploaded under (img/logo.png, img/logo.jpg, ...)."""
-    static = app.static_folder or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
-    for name in ('img/logo.png', 'img/logo.jpg', 'img/logo.png.jpg', 'img/logo.jpeg'):
-        if os.path.exists(os.path.join(static, name)):
-            return name
-    return None
-
-
-def _logo_path():
-    """Absolute logo path for the PDF builders; None when there is no logo."""
-    name = _logo_filename()
-    if not name:
-        return None
-    return os.path.join(app.static_folder or 'static', name)
-
-
 def _company_dict():
     """Company details as a plain dict for the report builders."""
     return {
@@ -1335,24 +1134,7 @@ def _company_dict():
         'address': app.config['COMPANY_ADDRESS'],
         'phone': app.config['COMPANY_PHONE'],
         'email': app.config['COMPANY_EMAIL'],
-        'logo_path': _logo_path(),
     }
-
-
-def _receipt_qr_data_uri(order):
-    """Receipt QR as a data URI for the HTML receipt page (CSP allows data:).
-
-    Encodes the same self-contained receipt text as the PDF QR."""
-    try:
-        company = _company_dict()
-        qr = qrcode.QRCode(border=2, box_size=10)
-        qr.add_data(pdf_reports.receipt_qr_data(order, company))
-        qr.make(fit=True)
-        buf = BytesIO()
-        qr.make_image(fill_color='black', back_color='white').save(buf, format='PNG')
-        return 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode('ascii')
-    except Exception:  # noqa: BLE001 - a QR failure must not break the page
-        return None
 
 
 def _receipt_attachment(order):
@@ -1380,25 +1162,14 @@ def place_order(product_id):
     if quantity > product.stock:
         flash(f'Only {product.stock} units available.', 'error')
         return redirect(url_for('product_detail', id=product_id))
-
-    # Delivery contact details are mandatory so admins can reach the buyer
-    # to arrange delivery.
-    delivery_address = (request.form.get('delivery_address') or '').strip()
-    delivery_phone = (request.form.get('delivery_phone') or '').strip()
-    if not delivery_address:
-        flash('Please provide a delivery address so we can deliver your order.', 'error')
-        return redirect(url_for('product_detail', id=product_id))
-    if not delivery_phone:
-        flash('Please provide a delivery phone number so we can reach you about your order.', 'error')
-        return redirect(url_for('product_detail', id=product_id))
-
+    
     order = Order(
         user_id=current_user.id,
         product_id=product_id,
         quantity=quantity,
         total_price=product.price * quantity,
-        delivery_address=delivery_address,
-        delivery_phone=delivery_phone,
+        delivery_address=request.form.get('delivery_address'),
+        delivery_phone=request.form.get('delivery_phone'),
         notes=request.form.get('notes')
     )
     product.stock -= quantity
@@ -1452,35 +1223,6 @@ def _notify_new_order(order):
     notifications.notify_customer_order_confirmation(order,
                                                      attachments=attachments)
 
-
-def _notify_admins_new_message(msg):
-    """Email all admins about a new contact-form message and create in-app
-    notifications. Email fails soft when SMTP is not configured."""
-    admins = User.query.filter(
-        User.role.in_(['admin', 'chief_admin']), User.is_active.is_(True)
-    ).all()
-    for admin in admins:
-        db.session.add(Notification(
-            user_id=admin.id,
-            title='New contact message',
-            message=f'{msg.name or "Someone"} ({msg.email or msg.phone or "no contact"}) '
-                    f'sent: {msg.subject or "General Inquiry"}',
-            type='message',
-        ))
-    db.session.commit()
-
-    subject = f'New contact message: {msg.subject or "General Inquiry"}'
-    body = (
-        f'A new message has arrived through the contact form.\n\n'
-        f'From: {msg.name or "-"}\n'
-        f'Email: {msg.email or "-"}\n'
-        f'Phone: {msg.phone or "-"}\n'
-        f'Account: {msg.user.username if msg.user else "guest"}\n\n'
-        f'{msg.message}\n\n'
-        f'Reply from the admin panel: /admin/message/{msg.id}/reply'
-    )
-    notifications.send_email(subject, _admin_emails(), body)
-
 # ============================================================================
 # PRODUCT MANAGEMENT (Farmers, Admins, Chief Admin)
 # ============================================================================
@@ -1513,19 +1255,10 @@ def _save_product_from_form(product, form, files, allow_status=False):
         product.stock = 0
 
     image_url = (form.get('image_url') or '').strip()
-    saved, image_error = save_uploaded_image(files.get('image'))
-    if image_error:
-        return False, image_error
+    saved = save_uploaded_image(files.get('image'))
     if saved:
         product.image = url_for('uploaded_file', filename=saved)
     elif image_url:
-        # Users often paste links without the scheme; a scheme-less URL
-        # would resolve as a broken relative path in the browser.
-        if not image_url.startswith(('http://', 'https://')):
-            if '.' not in image_url or ' ' in image_url:
-                return False, ('Please paste a full image link starting with '
-                               'https:// (or upload an image file instead).')
-            image_url = 'https://' + image_url
         product.image = image_url
 
     if allow_status:
@@ -1583,34 +1316,13 @@ def admin_dashboard():
     }
 
     messages = ContactMessage.query.order_by(ContactMessage.created_at.desc()).limit(10).all()
-
-    # Orders: pending first, filled with most recent other statuses (limit 10).
-    order_counts = {s: Order.query.filter_by(status=s).count()
-                    for s in ORDER_STATUSES}
-    recent_orders = Order.query.filter_by(status='pending')\
-        .order_by(Order.created_at.desc()).limit(10).all()
-    if len(recent_orders) < 10:
-        exclude_ids = [o.id for o in recent_orders]
-        others = Order.query.filter(Order.status != 'pending')\
-            .order_by(Order.created_at.desc()).limit(10 - len(recent_orders)).all()
-        recent_orders.extend(o for o in others if o.id not in exclude_ids)
-
-    # Training requests: pending first, then confirmed (limit 10).
-    training_counts = {s: TrainingSession.query.filter_by(status=s).count()
-                       for s in ['pending', 'confirmed', 'completed']}
-    recent_training = TrainingSession.query.filter(
-        TrainingSession.status.in_(['pending', 'confirmed']))\
-        .order_by(TrainingSession.created_at.desc()).limit(10).all()
-
+    recent_orders = Order.query.order_by(Order.created_at.desc()).limit(10).all()
     recent_users = User.query.order_by(User.created_at.desc()).limit(10).all()
 
     return render_template('admin/dashboard.html',
                          stats=stats,
                          messages=messages,
                          recent_orders=recent_orders,
-                         order_counts=order_counts,
-                         recent_training=recent_training,
-                         training_counts=training_counts,
                          recent_users=recent_users)
 
 @app.route('/admin/messages')
@@ -1637,29 +1349,6 @@ def reply_message(id):
         message.read = True
         message.replied_at = utcnow()
         db.session.commit()
-
-        # Actually deliver the reply to the sender: by email always, and
-        # in-app when they have an account.
-        subject = f'Re: {message.subject or "Your message to BioFarm Fruits"}'
-        body = (
-            f'Hi {message.name or "there"},\n\n'
-            f'You wrote to BioFarm Fruits:\n'
-            f'"{message.message}"\n\n'
-            f'Our reply:\n'
-            f'{reply}\n\n'
-            f'Thank you for reaching out.\n'
-            f'BioFarm Fruits'
-        )
-        notifications.send_email(subject, message.email, body)
-        if message.user:
-            db.session.add(Notification(
-                user_id=message.user.id,
-                title='Reply to your message',
-                message=f'An admin replied to "{message.subject or "General Inquiry"}": {reply[:200]}',
-                type='message',
-            ))
-            db.session.commit()
-
         flash('Reply sent successfully!', 'success')
         return redirect(url_for('admin_messages'))
 
@@ -1673,17 +1362,6 @@ def mark_message_read(id):
     message.read = True
     db.session.commit()
     flash('Message marked as read.', 'info')
-    return redirect(url_for('admin_messages'))
-
-@app.route('/admin/message/<int:id>/delete', methods=['POST'])
-@admin_required
-def delete_message(id):
-    """Delete a contact message from the admin inbox."""
-    message = ContactMessage.query.get_or_404(id)
-    name = message.name or 'Unknown sender'
-    db.session.delete(message)
-    db.session.commit()
-    flash(f'Message from {name} deleted.', 'success')
     return redirect(url_for('admin_messages'))
 
 @app.route('/admin/products')
@@ -1732,11 +1410,6 @@ def approve_product(id):
     product = Product.query.get_or_404(id)
     product.status = 'approved'
     db.session.commit()
-    # No product launches with an empty reviews section.
-    try:
-        ensure_inbuilt_reviews(product)
-    except Exception:
-        db.session.rollback()
     flash(f'Product "{product.name}" approved!', 'success')
     return redirect(url_for('admin_products'))
 
@@ -1766,25 +1439,9 @@ def delete_product(id):
 def admin_orders():
     """Order management CMS - view and process all orders."""
     status = request.args.get('status')
-    q = (request.args.get('q') or '').strip()
     query = Order.query
     if status and status != 'all':
         query = query.filter_by(status=status)
-    if q:
-        like = f'%{q}%'
-        query = (query.join(User, Order.user_id == User.id, isouter=True)
-                      .join(Product, Order.product_id == Product.id, isouter=True)
-                      .filter(or_(
-                          Order.receipt_number.ilike(like),
-                          Order.order_number.ilike(like),
-                          Order.delivery_phone.ilike(like),
-                          Order.delivery_address.ilike(like),
-                          User.username.ilike(like),
-                          User.email.ilike(like),
-                          User.phone.ilike(like),
-                          Product.name.ilike(like),
-                          cast(Order.id, db.String).ilike(like),
-                      )))
     orders = query.order_by(Order.created_at.desc()).all()
     counts = {
         'all': Order.query.count(),
@@ -1794,8 +1451,7 @@ def admin_orders():
         'cancelled': Order.query.filter_by(status='cancelled').count(),
     }
     return render_template('admin/orders.html', orders=orders,
-                           counts=counts, selected_status=status or 'all',
-                           search_query=q)
+                           counts=counts, selected_status=status or 'all')
 
 
 ORDER_STATUSES = ['pending', 'confirmed', 'delivered', 'cancelled']
@@ -1902,44 +1558,11 @@ def notifications_page():
     """Customer's own notification inbox."""
     items = (Notification.query.filter_by(user_id=current_user.id)
              .order_by(Notification.created_at.desc()).all())
+    # Mark unread as read on view.
+    for n in items:
+        n.read = True
+    db.session.commit()
     return render_template('notifications.html', notifications=items)
-
-
-@app.route('/notifications/<int:id>/read', methods=['POST'])
-@login_required
-def notification_mark_read(id):
-    """Mark one of my notifications as read."""
-    notif = Notification.query.get_or_404(id)
-    if notif.user_id != current_user.id:
-        abort(403)
-    notif.read = True
-    db.session.commit()
-    flash('Notification marked as read.', 'info')
-    return redirect(url_for('notifications_page'))
-
-
-@app.route('/notifications/read-all', methods=['POST'])
-@login_required
-def notification_mark_all_read():
-    """Mark all of my notifications as read."""
-    Notification.query.filter_by(user_id=current_user.id, read=False).update(
-        {'read': True})
-    db.session.commit()
-    flash('All notifications marked as read.', 'success')
-    return redirect(url_for('notifications_page'))
-
-
-@app.route('/notifications/<int:id>/delete', methods=['POST'])
-@login_required
-def notification_delete(id):
-    """Delete one of my notifications."""
-    notif = Notification.query.get_or_404(id)
-    if notif.user_id != current_user.id:
-        abort(403)
-    db.session.delete(notif)
-    db.session.commit()
-    flash('Notification deleted.', 'success')
-    return redirect(url_for('notifications_page'))
 
 
 @app.route('/admin/reset-requests')
@@ -2153,53 +1776,6 @@ def toggle_verified(id):
     return redirect(url_for('admin_users'))
 
 
-@app.route('/chief-admin/user/<int:id>/batch-number', methods=['POST'])
-@chief_admin_required
-def set_batch_number(id):
-    """Chief admin grants, changes or revokes a user's batch number. A batch
-    number is earned: the chief admin verifies someone as chief admin first,
-    then — after trust built through real usage of the system — assigns them
-    an official batch number. It is shown on the user's public profile as
-    their official BioFarm Fruits identity ID."""
-    user = User.query.get_or_404(id)
-    batch = (request.form.get('batch_number') or '').strip().upper()
-    if user.id == current_user.id and not batch:
-        flash('You cannot remove your own batch number.', 'error')
-        return redirect(url_for('admin_users'))
-    if batch:
-        existing = User.query.filter(User.batch_number == batch, User.id != user.id).first()
-        if existing:
-            flash(f'Batch number {batch} is already held by {existing.username}.', 'error')
-            return redirect(url_for('admin_users'))
-        if not user.is_chief_admin():
-            flash('Batch numbers are only granted to chief admins.', 'error')
-            return redirect(url_for('admin_users'))
-    user.batch_number = batch or None
-    db.session.commit()
-    if batch:
-        db.session.add(Notification(
-            user_id=user.id,
-            title='You have been granted a batch number',
-            message=f'Your official batch number is {batch}. It now appears '
-                    'on your profile as your BioFarm Fruits identity.',
-            type='verification',
-        ))
-        db.session.commit()
-        notifications.send_email(
-            subject=f'Your batch number on {app.config["COMPANY_NAME"]}',
-            recipients=user.email,
-            body=(f'Hi {user.username},\n\n'
-                  f'You have been granted the official batch number {batch} on '
-                  f'{app.config["COMPANY_NAME"]}. It now appears on your profile '
-                  f'as your official identity.\n\nThank you for your service to '
-                  f'our community.'),
-        )
-        flash(f'{user.username} was granted batch number {batch}.', 'success')
-    else:
-        flash(f'Batch number removed from {user.username}.', 'success')
-    return redirect(url_for('admin_users'))
-
-
 @app.route('/chief-admin/create-admin', methods=['GET', 'POST'])
 @chief_admin_required
 def create_admin():
@@ -2251,45 +1827,6 @@ def create_admin():
         flash(f'{role.replace("_", " ").title()} account "{username}" created.', 'success')
         return redirect(url_for('admin_users'))
     return render_template('chief_admin/create_admin.html')
-
-
-@app.route('/chief-admin/test-email', methods=['GET', 'POST'])
-@chief_admin_required
-def test_email():
-    """Send a test email so delivery problems can be diagnosed from the UI."""
-    if request.method == 'POST':
-        to = (request.form.get('email') or current_user.email or '').strip()
-        if not to:
-            flash('Enter an email address to send to.', 'error')
-            return redirect(url_for('test_email'))
-        if not (app.config.get('MAIL_USERNAME') and app.config.get('MAIL_PASSWORD')):
-            flash('SMTP is not configured: MAIL_USERNAME / MAIL_PASSWORD are '
-                  'missing from the environment (.env locally, environment '
-                  'variables on the hosting provider).', 'error')
-            return redirect(url_for('test_email'))
-        sent = notifications.send_email(
-            subject=f'Test email from {app.config["COMPANY_NAME"]}',
-            recipients=to,
-            body=('This is a test email sent from the chief admin panel.\n\n'
-                  f'Server: {app.config["MAIL_SERVER"]}:{app.config["MAIL_PORT"]}\n'
-                  f'From: {app.config["MAIL_DEFAULT_SENDER"]}\n\n'
-                  'If you received this, email delivery is working.'),
-        )
-        if sent:
-            flash(f'Test email handed to {app.config["MAIL_SERVER"]} for {to}. '
-                  'If it does not arrive, check the server logs and the Gmail '
-                  'account (app password valid, sending not blocked).', 'success')
-        else:
-            flash('Email send failed - the SMTP server refused it. Check the '
-                  'server logs for the exact error (wrong app password and '
-                  'outbound SMTP blocked by the host are the usual causes).',
-                  'error')
-        return redirect(url_for('test_email'))
-    return render_template('chief_admin/test_email.html',
-                           smtp_configured=bool(app.config.get('MAIL_USERNAME') and
-                                                app.config.get('MAIL_PASSWORD')),
-                           mail_server=app.config.get('MAIL_SERVER'),
-                           mail_username=app.config.get('MAIL_USERNAME'))
 
 # ============================================================================
 # MONTHLY REPORTS — customer statements + system report to the chief admin
@@ -2494,44 +2031,23 @@ CONTENT_FIELDS = [
     ('hero_tagline', 'Hero tagline', 'text'),
     ('hero_title', 'Hero title', 'text'),
     ('hero_subtitle', 'Hero subtitle', 'textarea'),
-    ('hero_image_1', 'Hero image 1 (top left)', 'image'),
-    ('hero_image_2', 'Hero image 2 (top right)', 'image'),
-    ('hero_image_3', 'Hero image 3 (bottom left)', 'image'),
-    ('hero_image_4', 'Hero image 4 (bottom right)', 'image'),
     ('about_title', 'About title', 'text'),
     ('about_body', 'About body', 'textarea'),
     ('contact_note', 'Contact note', 'textarea'),
 ]
-
-# Homepage fallbacks when no hero image has been uploaded via the CMS yet.
-HERO_IMAGE_DEFAULTS = {
-    'hero_image_1': 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400',
-    'hero_image_2': 'https://images.unsplash.com/photo-1601039641847-7857b994d704?w=400',
-    'hero_image_3': 'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=400',
-    'hero_image_4': 'https://images.unsplash.com/photo-1519162808019-7de1683fa2ad?w=400',
-}
 
 @app.route('/admin/cms', methods=['GET', 'POST'])
 @admin_required
 def admin_cms():
     """Edit site content blocks shown on public pages."""
     if request.method == 'POST':
-        for key, _label, kind in CONTENT_FIELDS:
-            if kind == 'image':
-                uploaded, error = save_uploaded_image(request.files.get(key))
-                if error:
-                    flash(f'{key}: {error}', 'error')
-                elif uploaded:
-                    set_content(key, uploaded)
-                # empty upload = keep the current image (or its absence)
-                continue
+        for key, _label, _type in CONTENT_FIELDS:
             set_content(key, (request.form.get(key) or '').strip())
         db.session.commit()
         flash('Site content updated.', 'success')
         return redirect(url_for('admin_cms'))
     values = {key: get_content(key) for key, _l, _t in CONTENT_FIELDS}
-    return render_template('admin/cms.html', fields=CONTENT_FIELDS, values=values,
-                           hero_defaults=HERO_IMAGE_DEFAULTS)
+    return render_template('admin/cms.html', fields=CONTENT_FIELDS, values=values)
 
 # ============================================================================
 # CMS — blog / news
@@ -2582,10 +2098,7 @@ def admin_blog_new():
             published=bool(request.form.get('published')),
             author_id=current_user.id,
         )
-        saved, image_error = save_uploaded_image(request.files.get('image'))
-        if image_error:
-            flash(image_error, 'error')
-            return render_template('admin/blog_form.html', post=None)
+        saved = save_uploaded_image(request.files.get('image'))
         if saved:
             post.image = url_for('uploaded_file', filename=saved)
         elif request.form.get('image_url'):
@@ -2608,10 +2121,7 @@ def admin_blog_edit(id):
         post.title = title
         post.body = request.form.get('body')
         post.published = bool(request.form.get('published'))
-        saved, image_error = save_uploaded_image(request.files.get('image'))
-        if image_error:
-            flash(image_error, 'error')
-            return render_template('admin/blog_form.html', post=post)
+        saved = save_uploaded_image(request.files.get('image'))
         if saved:
             post.image = url_for('uploaded_file', filename=saved)
         elif request.form.get('image_url'):
@@ -2773,65 +2283,31 @@ def seed_data():
             db.session.commit()
             print('Products seeded!')
 
-        # Starter reviews. They are seeded under individual customer names
-        # (not one system account) so the reviews section reads naturally.
-        # Older deployments seeded these under biofarm_team — remove those
-        # and re-seed under individual names.
-        team = User.query.filter_by(username='biofarm_team').first()
-        if team:
-            removed = Review.query.filter_by(user_id=team.id).delete()
-            if removed:
-                db.session.commit()
-
+        # Seed the first few system-built reviews (only when none exist yet).
         if Review.query.count() == 0:
-            reviewers = [
-                ('Mary Wanjiku', 'Nairobi, Kenya'),
-                ('James Otieno', 'Kisumu, Kenya'),
-                ('Peter Akenga', 'Eldoret, Kenya'),
-                ('Carol Njambi', 'Nyeri, Kenya'),
-                ('David Mutua', 'Machakos, Kenya'),
-                ('Aisha Hassan', 'Mombasa, Kenya'),
-            ]
-            review_users = {}
-            for display_name, location in reviewers:
-                u = User.query.filter_by(username=display_name).first()
-                if not u:
-                    u = User(
-                        username=display_name,
-                        email=f'{display_name.lower().replace(" ", ".")}@example.com',
-                        password_hash=generate_password_hash(secrets.token_hex(16)),  # no human login
-                        role='customer',
-                        verified=True,
-                        bio='BioFarm Fruits customer.',
-                        location=location,
-                    )
-                    db.session.add(u)
-                    db.session.commit()
-                review_users[display_name] = u
-
+            team = User.query.filter_by(username='biofarm_team').first()
             sample_reviews = [
-                ('Mary Wanjiku', 'Dragon Fruit Red', 5, 'Deep red flesh, sweetness was spot on, and it '
+                ('Dragon Fruit Red', 5, 'Deep red flesh, sweetness was spot on, and it '
                  'arrived in perfect condition. Our kids now ask for it by name.'),
-                ('James Otieno', 'Dragon Fruit Red', 4, 'Great quality fruit. A little pricier than the '
+                ('Dragon Fruit Red', 4, 'Great quality fruit. A little pricier than the '
                  'market but you can taste the difference.'),
-                ('Peter Akenga', 'Dragon Fruit Seedlings', 5, 'The cuttings rooted quickly and are thriving '
+                ('Dragon Fruit Seedlings', 5, 'The cuttings rooted quickly and are thriving '
                  'six weeks in. Clear planting instructions came along too.'),
-                ('Carol Njambi', 'Hass Avocado Seedlings', 5, 'Healthy, disease-free seedlings. Strong stems '
+                ('Hass Avocado Seedlings', 5, 'Healthy, disease-free seedlings. Strong stems '
                  'and good root ball on every single one.'),
-                ('David Mutua', 'Hass Avocado Fruit', 4, 'Creamy and ripened perfectly. Ordering again '
+                ('Hass Avocado Fruit', 4, 'Creamy and ripened perfectly. Ordering again '
                  'next month.'),
-                ('Aisha Hassan', 'Soursop', 5, 'Fresh soursop is hard to find locally — this was juicy '
+                ('Soursop', 5, 'Fresh soursop is hard to find locally — this was juicy '
                  'and made wonderful juice.'),
             ]
             added = 0
-            for display_name, product_name, rating, comment in sample_reviews:
+            for product_name, rating, comment in sample_reviews:
                 product = Product.query.filter_by(name=product_name).first()
-                user = review_users.get(display_name)
-                if not product or not user:
+                if not product:
                     continue
                 db.session.add(Review(
                     product_id=product.id,
-                    user_id=user.id,
+                    user_id=team.id,
                     rating=rating,
                     comment=comment,
                     verified_purchase=True,
@@ -2839,7 +2315,7 @@ def seed_data():
                 added += 1
             if added:
                 db.session.commit()
-                print(f'{added} starter reviews seeded under individual names!')
+                print(f'{added} system reviews seeded!')
 
         # Seed editable CMS content
         defaults = {
@@ -2894,67 +2370,6 @@ def sync_schema():
                 db.session.rollback()
                 print(f'Schema sync: skipped {table.name}.{column.name} ({exc})')
 
-def fix_id_sequences():
-    """Postgres only: re-sync each table's primary-key sequence to max(id)+1.
-
-    After data is imported with explicit ids (e.g. the SQLite -> Neon
-    migration), the sequences stay at 1 and every INSERT collides with
-    "duplicate key value violates unique constraint <table>_pkey". Running
-    setval on startup makes inserts work again, whichever table drifted.
-    Idempotent; a no-op on SQLite (auto rowid handles this itself).
-    """
-    if db.engine.name != 'postgresql':
-        return
-    from sqlalchemy import text, inspect as sa_inspect
-    inspector = sa_inspect(db.engine)
-    for table in inspector.get_table_names():
-        pk = inspector.get_pk_constraint(table)
-        cols = pk.get('constrained_columns') if pk else None
-        if not cols or len(cols) != 1:
-            continue  # only single-column integer pks use a sequence
-        col = cols[0]
-        try:
-            db.session.execute(text(
-                f"SELECT setval(pg_get_serial_sequence('{table}', '{col}'), "
-                f"COALESCE((SELECT MAX(\"{col}\") FROM \"{table}\"), 0) + 1, false)"))
-            db.session.commit()
-        except Exception as exc:  # noqa: BLE001 - table may lack a sequence
-            db.session.rollback()
-            app.logger.warning('Sequence sync skipped %s.%s: %s', table, col, exc)
-
-def backfill_uploads_to_db():
-    """Copy any images sitting in the local uploads folder into the
-    database so they survive the next wipe/redeploy. Idempotent: files
-    already stored are skipped. Protects images uploaded before the
-    DB-backed upload storage existed."""
-    folder = app.config['UPLOAD_FOLDER']
-    if not os.path.isdir(folder):
-        return
-    stored = {row.filename for row in db.session.query(UploadedImage.filename).all()}
-    moved = 0
-    for filename in os.listdir(folder):
-        full = os.path.join(folder, filename)
-        if not os.path.isfile(full) or filename in stored:
-            continue
-        if not allowed_image(filename):
-            continue
-        try:
-            with open(full, 'rb') as fh:
-                data = fh.read()
-            ext = filename.rsplit('.', 1)[1].lower()
-            db.session.add(UploadedImage(
-                filename=filename,
-                mimetype=f'image/{ "jpeg" if ext in ("jpg", "jpeg") else ext }',
-                data=data,
-            ))
-            moved += 1
-        except OSError as exc:
-            app.logger.error('Backfill skipped %s: %s', filename, exc)
-    if moved:
-        db.session.commit()
-        print(f'Backfilled {moved} existing upload(s) into the database.')
-
-
 def init_db():
     """Create uploads folder, tables, schema patches, and seed data.
     Safe to call repeatedly (create_all / sync_schema / seed_data are all
@@ -2967,9 +2382,7 @@ def init_db():
     with app.app_context():
         db.create_all()
         sync_schema()
-        fix_id_sequences()
         seed_data()
-        backfill_uploads_to_db()
 
 
 def create_app():
