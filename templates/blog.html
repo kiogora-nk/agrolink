@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import picture with context %}
 {% block title %}Blog & News{% endblock %}
 {% block content %}
 <section class="space-y-6">
@@ -13,7 +14,7 @@
         <article class="overflow-hidden rounded bg-white shadow-sm">
             <div class="aspect-[16/9] bg-slate-100">
                 {% if post.image %}
-                <img src="{{ post.image }}" alt="{{ post.title }}" class="h-full w-full object-cover">
+                {{ picture(post.image, post.title, sizes='(min-width: 1024px) 31vw, (min-width: 640px) 46vw, 92vw') }}
                 {% endif %}
             </div>
             <div class="p-5">

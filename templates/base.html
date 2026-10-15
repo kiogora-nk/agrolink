@@ -7,17 +7,36 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="csrf-token" content="{{ csrf_token }}">
     {% if logo_file %}
-    <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename=logo_file) }}">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename=logo_file) }}">
+    <link rel="icon" type="image/jpeg" href="{{ static_v(logo_file) }}">
+    <link rel="apple-touch-icon" href="{{ static_v(logo_file) }}">
     {% else %}
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230f172a'/><circle cx='32' cy='32' r='14' fill='%23fbbf24'/></svg>">
     {% endif %}
     <title>BioFarm Fruits - {% block title %}{% endblock %}</title>
     {% if tailwind_css %}
-    <link rel="stylesheet" href="{{ url_for('static', filename=tailwind_css) }}">
+    <link rel="stylesheet" href="{{ static_v(tailwind_css) }}">
     {% else %}
     <script src="https://cdn.tailwindcss.com"></script>
     {% endif %}
+    {# Pages that have a critical above-the-fold image (the homepage hero, a
+       product photo) preload it here so it starts downloading with the
+       stylesheet instead of waiting for the HTML to be parsed. #}
+    {% block preload %}{% endblock %}
+    <script>
+        /* Neutral "no picture" placeholder, defined once. Images reference it
+           as onerror="imgFallback(this)". The graphic is a cached static file
+           rather than an inline data URI, so a page with many missing images
+           repeats a ~30-character URL instead of the whole blob. Declared in
+           <head> so it exists before any image has a chance to fail. Setting
+           onerror to null first means a fallback that itself fails cannot
+           loop. */
+        window.imgFallback = function (el) {
+            el.onerror = null;
+            el.removeAttribute('srcset');
+            el.removeAttribute('sizes');
+            el.src = '{{ placeholder_image }}';
+        };
+    </script>
     <style>
         .line-clamp-2 {
             display: -webkit-box;
@@ -74,11 +93,11 @@
             <div class="flex justify-between items-center py-3">
                 <a href="/" class="flex min-w-0 items-center gap-2 text-lg sm:text-xl font-bold">
                     {% if logo_file %}
-                    <img src="{{ url_for('static', filename=logo_file) }}" alt="{{ company_name }} logo"
-                         class="h-9 sm:h-10 w-auto shrink-0">
+                    <img src="{{ static_v(logo_file) }}" alt="{{ company_name }} logo"
+                         class="h-9 sm:h-10 w-auto shrink-0" width="160" height="40">
                     {% else %}
-                    <span class="flex h-9 sm:h-10 w-9 sm:w-10 shrink-0 items-center justify-center rounded-full bg-amber-400 text-2xl leading-none"
-                          aria-hidden="true">🌱</span>
+                    <span class="flex h-9 sm:h-10 w-9 sm:w-10 shrink-0 items-center justify-center rounded-full bg-amber-400 text-sm font-extrabold text-slate-900"
+                          aria-hidden="true">{{ company_name[0]|upper }}</span>
                     {% endif %}
                     <span class="truncate">{{ company_name }}</span>
                 </a>
@@ -117,6 +136,9 @@
                             <a href="/chief-admin/dashboard" class="hover:text-amber-300">Chief Admin</a>
                         {% elif current_user.is_admin() %}
                             <a href="/admin/dashboard" class="hover:text-amber-300">Admin</a>
+                        {% endif %}
+                        {% if current_user.can_use_pos() %}
+                            <a href="/pos" class="hover:text-amber-300">POS</a>
                         {% endif %}
                         <a href="/dashboard" class="hover:text-amber-300">Dashboard</a>
 
@@ -161,8 +183,10 @@
                         <!-- Profile picture -->
                         <a href="/profile" class="flex items-center hover:opacity-80" title="My profile" aria-label="My profile">
                             {% if current_user.avatar %}
-                            <img src="{{ current_user.avatar }}" alt="{{ current_user.username }}"
-                                 class="h-9 w-9 rounded-full border-2 border-amber-400 object-cover">
+                            <img src="{{ image_src(current_user.avatar, size='thumb') }}" alt="{{ current_user.username }}"
+                                 class="h-9 w-9 rounded-full border-2 border-amber-400 object-cover"
+                                 width="36" height="36" decoding="async"
+                                 onerror="imgFallback(this)">
                             {% else %}
                             <span class="flex h-9 w-9 items-center justify-center rounded-full border-2 border-amber-400 bg-slate-800 text-sm font-bold text-amber-300">
                                 {{ current_user.username[0].upper() }}
@@ -205,6 +229,9 @@
                         <a href="/chief-admin/dashboard" class="block py-2.5 hover:text-amber-300">Chief Admin</a>
                     {% elif current_user.is_admin() %}
                         <a href="/admin/dashboard" class="block py-2.5 hover:text-amber-300">Admin</a>
+                    {% endif %}
+                    {% if current_user.can_use_pos() %}
+                        <a href="/pos" class="block py-2.5 hover:text-amber-300">Point of Sale</a>
                     {% endif %}
                     <a href="/dashboard" class="block py-2.5 hover:text-amber-300">Dashboard</a>
                     <a href="/notifications" class="flex items-center justify-between py-2 hover:text-amber-300">

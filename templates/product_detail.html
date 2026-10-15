@@ -1,5 +1,13 @@
 ﻿{% extends "base.html" %}
-{% from "_macros.html" import verified_badge %}
+{% from "_macros.html" import verified_badge, picture with context %}
+{% block preload %}
+{% if product.image %}
+{% set product_srcset = image_srcset(product.image) %}
+<link rel="preload" as="image" href="{{ image_src(product.image, size='thumb') }}"
+      {% if product_srcset %}imagesrcset="{{ product_srcset }}" imagesizes="(min-width: 768px) 45vw, 92vw"{% endif %}
+      fetchpriority="high">
+{% endif %}
+{% endblock %}
 {% block title %}{{ product.name }} - BioFarm Fruits{% endblock %}
 {% block content %}
 <section class="max-w-5xl mx-auto">
@@ -7,7 +15,7 @@
         <div>
             <div class="aspect-[4/3] overflow-hidden rounded bg-slate-100">
                 {% if product.image %}
-                <img src="{{ image_src(product.image) }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400'">
+                {{ picture(product.image, product.name, eager=True, priority=True, sizes='(min-width: 768px) 45vw, 92vw') }}
                 {% else %}
                 <div class="flex h-full items-center justify-center text-slate-400">{{ product.name }}</div>
                 {% endif %}
@@ -135,7 +143,7 @@
             <a href="/product/{{ item.id }}" class="bg-white p-3 rounded shadow hover:shadow-lg transition">
                 <div class="aspect-square bg-gray-100 rounded overflow-hidden">
                     {% if item.image %}
-                    <img src="{{ image_src(item.image) }}" alt="{{ item.name }}" class="w-full h-full object-cover">
+                    {{ picture(item.image, item.name, sizes='(min-width: 640px) 22vw, 45vw') }}
                     {% endif %}
                 </div>
                 <p class="font-semibold mt-2">{{ item.name }}</p>

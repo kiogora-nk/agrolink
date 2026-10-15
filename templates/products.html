@@ -1,4 +1,5 @@
 ﻿{% extends "base.html" %}
+{% from "_macros.html" import picture with context %}
 {% block title %}Products - BioFarm Fruits{% endblock %}
 {% block content %}
 <section>
@@ -37,9 +38,9 @@
         <div class="bg-white rounded shadow overflow-hidden">
             <div class="aspect-[4/3] bg-slate-100">
                 {% if product.image %}
-                <img src="{{ image_src(product.image) }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400'">
+                {{ picture(product.image, product.name, sizes='(min-width: 1280px) 23vw, (min-width: 640px) 46vw, 92vw') }}
                 {% else %}
-                <div class="flex h-full items-center justify-center text-slate-400">{{ product.name }}</div>
+                <div class="flex h-full items-center justify-center px-3 text-center text-slate-400">{{ product.name }}</div>
                 {% endif %}
             </div>
             <div class="p-4">
@@ -56,6 +57,25 @@
         </div>
         {% endfor %}
     </div>
+
+    {% if pagination and pagination.total %}
+    <p class="mt-6 text-center text-sm text-slate-600">
+        Showing {{ products|length }} of {{ pagination.total }} product{{ '' if pagination.total == 1 else 's' }}
+    </p>
+    {% endif %}
+    {% if pagination and pagination.pages > 1 %}
+    <nav class="mt-4 flex flex-wrap items-center justify-center gap-3" aria-label="Product pages">
+        {% if pagination.has_prev %}
+        <a href="{{ url_for('products', page=pagination.prev_num, category=selected_category, search=search) }}"
+           class="rounded border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Previous</a>
+        {% endif %}
+        <span class="px-2 text-sm text-slate-600">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+        {% if pagination.has_next %}
+        <a href="{{ url_for('products', page=pagination.next_num, category=selected_category, search=search) }}"
+           class="rounded border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Next</a>
+        {% endif %}
+    </nav>
+    {% endif %}
     {% else %}
     <div class="bg-white p-8 text-center rounded shadow">
         <p class="text-gray-600">No products available at the moment.</p>

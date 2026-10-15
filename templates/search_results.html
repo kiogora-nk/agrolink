@@ -1,4 +1,5 @@
 ﻿{% extends "base.html" %}
+{% from "_macros.html" import picture with context %}
 {% block title %}Search Results{% endblock %}
 {% block content %}
 <section class="space-y-6">
@@ -42,7 +43,7 @@
         <article class="overflow-hidden rounded bg-white shadow-sm">
             <div class="aspect-[4/3] bg-slate-100">
                 {% if product.image %}
-                <img src="{{ image_src(product.image) }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://commons.wikimedia.org/wiki/Special:Redirect/file/Red%20dragon%20fruit.jpg'">
+                {{ picture(product.image, product.name) }}
                 {% else %}
                 <div class="flex h-full items-center justify-center text-slate-400">{{ product.name }}</div>
                 {% endif %}

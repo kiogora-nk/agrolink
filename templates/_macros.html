@@ -1,4 +1,9 @@
-{# Shared UI macros used across templates. #}
+{# Shared UI macros used across templates.
+
+   These read `image_src` / `image_srcset` / `placeholder_image` from the
+   context processor, so any template importing them MUST use
+   `{% from "_macros.html" import ... with context %}` - without it the
+   macros render empty. #}
 
 {% macro verified_badge(user=None, verified=False) -%}
 {%- if (user is defined and user and user.verified) or (user is not defined and verified) -%}
@@ -12,10 +17,34 @@
 
 {% macro avatar(user, size_class='h-12 w-12') -%}
 {% if user and user.avatar %}
-<img src="{{ user.avatar }}" alt="{{ user.username }}" class="{{ size_class }} rounded-full object-cover border border-slate-200">
+<img src="{{ image_src(user.avatar, size='thumb') }}" alt="{{ user.username }}"
+     class="{{ size_class }} rounded-full object-cover border border-slate-200"
+     loading="lazy" decoding="async" width="96" height="96"
+     onerror="imgFallback(this)">
 {% else %}
 <span class="{{ size_class }} rounded-full bg-amber-100 text-amber-800 font-bold flex items-center justify-center select-none">
     {{ (user.username[:2] if user else '?').upper() }}
 </span>
 {% endif %}
+{%- endmacro %}
+
+{# Product / content picture.
+
+   `value` is the raw stored image field; the macro resolves it (checking the
+   file is really available), offers the small card variant through srcset,
+   and reserves the box so the image cannot shift the layout as it loads.
+   Pass eager=True for the one image above the fold on a page - everything
+   else lazy-loads. The onerror handler is a last-resort net for an external
+   URL that stops resolving; it swaps in the neutral placeholder and unarms
+   itself so a dead URL cannot loop. #}
+{% macro picture(value, alt, class='h-full w-full object-cover', sizes='(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 92vw', eager=False, priority=False, fallback=None) -%}
+{%- set srcset = image_srcset(value) -%}
+<img src="{{ fallback if fallback else image_src(value, size='thumb') }}"
+     {% if srcset %}srcset="{{ srcset }}" sizes="{{ sizes }}"{% endif %}
+     alt="{{ alt }}"
+     class="{{ class }}"
+     loading="{{ 'eager' if eager else 'lazy' }}"
+     decoding="{{ 'sync' if eager else 'async' }}"
+     {% if priority %}fetchpriority="high"{% endif %}
+     onerror="imgFallback(this)">
 {%- endmacro %}

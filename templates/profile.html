@@ -11,7 +11,9 @@
             <div class="bg-white rounded-lg shadow p-4 sm:p-6 text-center">
                 <div class="w-32 h-32 mx-auto rounded-full bg-gray-200 overflow-hidden mb-4">
                     {% if user.avatar %}
-                    <img src="{{ user.avatar }}" alt="{{ user.username }}" class="w-full h-full object-cover">
+                    <img src="{{ image_src(user.avatar, size='thumb') }}" alt="{{ user.username }}" class="w-full h-full object-cover"
+                         loading="lazy" decoding="async"
+                         onerror="imgFallback(this)">
                     {% else %}
                     <div class="flex items-center justify-center h-full text-4xl bg-amber-100 text-amber-800">
                         {{ user.username[0].upper() }}

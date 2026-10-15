@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Receipt {{ sale.sale_number or sale.id }}{% endblock %}
+
+{% block content %}
+<style>
+@media print {
+    nav, footer, .no-print { display: none !important; }
+    body { background: #fff !important; }
+    .receipt-sheet { border: 0 !important; box-shadow: none !important; margin: 0 !important; max-width: 100% !important; }
+}
+</style>
+
+<div class="mx-auto max-w-2xl px-4 py-6">
+
+    <div class="no-print mb-4 flex flex-wrap items-center justify-between gap-2">
+        <a href="/pos" class="text-sm font-semibold text-amber-700 hover:underline">&larr; Back to the till</a>
+        <div class="flex flex-wrap gap-2">
+            <button type="button" id="printReceipt"
+                    class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+                Print receipt
+            </button>
+            <a href="/pos/sales"
+               class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Sales history
+            </a>
+        </div>
+    </div>
+
+    {% if sale.is_voided %}
+    <div class="no-print mb-4 rounded-lg border-l-4 border-red-500 bg-red-50 px-4 py-3">
+        <p class="font-bold text-red-800">This sale was voided</p>
+        <p class="mt-0.5 text-sm text-red-700">
+            {{ sale.voided_at.strftime('%d %b %Y at %H:%M') if sale.voided_at else '' }}
+            {% if sale.voided_by %} by {{ sale.voided_by.username }}{% endif %}.
+            Stock was returned. Reason: {{ sale.void_reason or 'not recorded' }}.
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="receipt-sheet rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+
+        <div class="border-b border-dashed border-slate-300 pb-4 text-center">
+            <h1 class="text-xl font-extrabold uppercase tracking-wide text-slate-900">{{ company_name }}</h1>
+            {% if company_address %}<p class="mt-1 text-xs text-slate-500">{{ company_address }}</p>{% endif %}
+            {% if company_phone %}<p class="text-xs text-slate-500">Tel: {{ company_phone }}</p>{% endif %}
+            {% if company_email %}<p class="text-xs text-slate-500">{{ company_email }}</p>{% endif %}
+            <p class="mt-3 text-sm font-bold uppercase tracking-widest text-slate-700">Sales receipt</p>
+        </div>
+
+        <dl class="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-dashed border-slate-300 py-4 text-sm">
+            <div>
+                <dt class="text-xs uppercase tracking-wide text-slate-500">Receipt no.</dt>
+                <dd class="font-mono font-bold text-slate-900">{{ sale.sale_number or sale.id }}</dd>
+            </div>
+            <div class="text-right">
+                <dt class="text-xs uppercase tracking-wide text-slate-500">Date</dt>
+                <dd class="font-semibold text-slate-900">
+                    {{ sale.created_at.strftime('%d %b %Y, %H:%M') if sale.created_at else '' }}
+                </dd>
+            </div>
+            <div>
+                <dt class="text-xs uppercase tracking-wide text-slate-500">Served by</dt>
+                <dd class="font-semibold text-slate-900">{{ sale.cashier.username if sale.cashier else '—' }}</dd>
+            </div>
+            <div class="text-right">
+                <dt class="text-xs uppercase tracking-wide text-slate-500">Payment</dt>
+                <dd class="font-semibold text-slate-900">
+                    {{ 'Cash' if sale.payment_method == 'cash' else 'M-Pesa' }}
+                    —
+                    {% if sale.payment_status == 'confirmed' %}<span class="text-green-700">Paid</span>
+                    {% elif sale.payment_status == 'pending' %}<span class="text-amber-700">Pending</span>
+                    {% else %}<span class="text-red-700">Failed</span>{% endif %}
+                </dd>
+            </div>
+            {% if sale.customer_name or sale.customer_phone %}
+            <div class="col-span-full">
+                <dt class="text-xs uppercase tracking-wide text-slate-500">Customer</dt>
+                <dd class="font-semibold text-slate-900">
+                    {{ sale.customer_name or '—' }}{% if sale.customer_phone %} · {{ sale.customer_phone }}{% endif %}
+                </dd>
+            </div>
+            {% endif %}
+            {% if sale.payment_reference %}
+            <div class="col-span-full">
+                <dt class="text-xs uppercase tracking-wide text-slate-500">M-Pesa transaction code</dt>
+                <dd class="font-mono font-semibold text-slate-900">
+                    {{ sale.payment_reference }}
+                    {%- if sale.confirmed_by %} <span class="font-sans text-xs text-slate-500">confirmed by {{ sale.confirmed_by.username }}</span>{% endif %}
+                </dd>
+            </div>
+            {% endif %}
+        </dl>
+
+        <table class="mt-4 w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-300 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th class="py-2">Item</th>
+                    <th class="py-2 text-right">Qty</th>
+                    <th class="py-2 text-right">Unit</th>
+                    <th class="py-2 text-right">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in sale.items %}
+                <tr class="border-b border-slate-100">
+                    <td class="py-2 pr-2 text-slate-800">{{ item.product_name }}</td>
+                    <td class="py-2 text-right tabular-nums text-slate-700">{{ item.quantity }}</td>
+                    <td class="py-2 text-right tabular-nums text-slate-700">KES {{ '{:,.2f}'.format(item.unit_price or 0) }}</td>
+                    <td class="py-2 text-right font-semibold tabular-nums text-slate-900">KES {{ '{:,.2f}'.format(item.line_total or 0) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="mt-4 space-y-1 border-t border-slate-300 pt-3 text-sm">
+            <div class="flex justify-between text-slate-600">
+                <span>Subtotal</span>
+                <span class="tabular-nums">KES {{ '{:,.2f}'.format(sale.subtotal or 0) }}</span>
+            </div>
+            <div class="flex justify-between text-lg font-extrabold text-slate-900">
+                <span>Total</span>
+                <span class="tabular-nums">KES {{ '{:,.2f}'.format(sale.total or 0) }}</span>
+            </div>
+        </div>
+
+        {% if sale.notes %}
+        <p class="mt-3 border-t border-dashed border-slate-300 pt-3 text-xs text-slate-500">
+            Note: {{ sale.notes }}
+        </p>
+        {% endif %}
+
+        <p class="mt-5 border-t border-dashed border-slate-300 pt-4 text-center text-xs text-slate-500">
+            Thank you for your business.
+        </p>
+    </div>
+
+    {% if current_user.can_manage_pos() and not sale.is_voided %}
+    <div class="no-print mt-6 space-y-4">
+
+        {% if sale.payment_method in ('mpesa',) and sale.payment_status == 'pending' %}
+        <section class="rounded-xl border border-amber-300 bg-amber-50 p-4">
+            <h2 class="text-base font-bold text-slate-900">Confirm M-Pesa payment</h2>
+            <p class="mt-1 text-sm text-slate-600">
+                Check the transaction code on the M-Pesa statement before confirming. The
+                confirmation is recorded against your account.
+            </p>
+            <form method="post" action="/pos/sale/{{ sale.id }}/payment" class="mt-3 flex flex-wrap gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label for="payment_reference" class="sr-only">M-Pesa transaction code</label>
+                <input id="payment_reference" name="payment_reference" required maxlength="20"
+                       autocomplete="off" placeholder="e.g. QK73HS92LM"
+                       class="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-base uppercase focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                <button type="submit" name="action" value="confirm"
+                        class="rounded-lg bg-green-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-green-700">
+                    Confirm payment
+                </button>
+                <button type="submit" name="action" value="fail"
+                        class="rounded-lg border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50">
+                    Mark failed
+                </button>
+            </form>
+        </section>
+        {% elif sale.payment_status != 'confirmed' and sale.payment_method in ('mpesa',) %}
+        <p class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            This M-Pesa payment is marked <strong>failed</strong>.
+            {% if sale.confirmed_by %} Recorded by {{ sale.confirmed_by.username }}.{% endif %}
+        </p>
+        {% endif %}
+
+        <section class="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 class="text-base font-bold text-slate-900">Void this sale</h2>
+            <p class="mt-1 text-sm text-slate-600">
+                Voiding keeps the sale on record, returns the stock and marks it reversed.
+                It does not delete anything.
+            </p>
+            <form method="post" action="/pos/sale/{{ sale.id }}/void" class="mt-3 flex flex-wrap gap-2"
+                  data-confirm="Void this sale and return the stock?">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label for="void_reason" class="sr-only">Reason for voiding</label>
+                <input id="void_reason" name="reason" required minlength="3" maxlength="500"
+                       autocomplete="off" placeholder="Reason (required)"
+                       class="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2.5 text-base focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-300">
+                <button type="submit"
+                        class="rounded-lg border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50">
+                    Void sale
+                </button>
+            </form>
+        </section>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    var printBtn = document.getElementById('printReceipt');
+    if (printBtn) {
+        printBtn.addEventListener('click', function () { window.print(); });
+    }
+    // Voiding is irreversible, so ask once before submitting.
+    Array.prototype.forEach.call(document.querySelectorAll('form[data-confirm]'), function (form) {
+        form.addEventListener('submit', function (e) {
+            if (!window.confirm(form.dataset.confirm)) { e.preventDefault(); }
+        });
+    });
+})();
+</script>
+{% endblock %}

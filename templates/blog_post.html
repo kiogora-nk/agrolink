@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import picture with context %}
 {% block title %}{{ post.title }}{% endblock %}
 {% block content %}
 <article class="max-w-3xl mx-auto">
@@ -7,7 +8,7 @@
     <p class="mt-1 text-sm text-slate-500">{{ post.created_at.strftime('%b %d, %Y') }}{% if post.author %} · {{ post.author.username }}{% endif %}</p>
 
     {% if post.image %}
-    <img src="{{ post.image }}" alt="{{ post.title }}" class="mt-5 w-full rounded object-cover">
+    {{ picture(post.image, post.title, 'mt-5 w-full rounded object-cover', '92vw', eager=True) }}
     {% endif %}
 
     <div class="prose mt-6 max-w-none whitespace-pre-line text-slate-700">{{ post.body }}</div>

@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+{% from "_macros.html" import picture with context %}
+{% block title %}Point of Sale{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-7xl px-4 py-5 pb-32 lg:pb-8">
+
+    <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Point of Sale</h1>
+            <p class="text-sm text-slate-500">Till open for {{ current_user.username }}</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a href="/pos/sales"
+               class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Sales history
+            </a>
+            {% if current_user.can_manage_pos() %}
+            <a href="/pos/summary"
+               class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Daily summary
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
+
+        <!-- ================= catalogue ================= -->
+        <div class="lg:col-span-2">
+
+            <form action="/pos" method="get" role="search" class="mb-3 flex gap-2">
+                <label for="posSearch" class="sr-only">Search products</label>
+                <input id="posSearch" type="search" name="search" value="{{ search }}"
+                       autocomplete="off" enterkeyhint="search"
+                       placeholder="Search by product name or category"
+                       class="min-w-0 flex-1 rounded-lg border border-slate-300 px-4 py-3 text-base focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+                <button type="submit"
+                        class="rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white hover:bg-slate-800">
+                    Find
+                </button>
+            </form>
+
+            {% if categories %}
+            <div class="mb-4 flex flex-wrap gap-2">
+                <a href="/pos{% if search %}?search={{ search|urlencode }}{% endif %}"
+                   class="rounded-full px-3 py-1.5 text-sm font-medium {% if not category %}bg-amber-400 text-slate-900{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">
+                    All
+                </a>
+                {% for name in categories %}
+                <a href="/pos?category={{ name|urlencode }}{% if search %}&amp;search={{ search|urlencode }}{% endif %}"
+                   class="rounded-full px-3 py-1.5 text-sm font-medium {% if category == name %}bg-amber-400 text-slate-900{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">
+                    {{ name }}
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if products %}
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                {% for p in products %}
+                {% set stock = p.stock or 0 %}
+                <button type="button"
+                        class="pos-add overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition hover:border-amber-400 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
+                        data-id="{{ p.id }}"
+                        data-name="{{ p.name }}"
+                        data-price="{{ '%.2f'|format(p.price or 0) }}"
+                        data-stock="{{ stock }}"
+                        {% if stock <= 0 %}disabled aria-disabled="true"{% endif %}>
+                    <span class="block aspect-square bg-slate-100">
+                        {{ picture(p.image, p.name, sizes='(min-width: 1280px) 22vw, (min-width: 640px) 30vw, 45vw') }}
+                    </span>
+                    <span class="block p-2.5">
+                        <span class="block text-sm font-semibold leading-snug text-slate-900 line-clamp-2">{{ p.name }}</span>
+                        <span class="mt-1 block text-sm font-bold text-amber-700">KES {{ '{:,.2f}'.format(p.price or 0) }}</span>
+                        <span class="block text-xs {% if stock <= 0 %}font-semibold text-red-600{% elif stock <= 5 %}font-medium text-amber-600{% else %}text-slate-500{% endif %}">
+                            {% if stock <= 0 %}Out of stock{% else %}{{ stock }} in stock{% endif %}
+                        </span>
+                    </span>
+                </button>
+                {% endfor %}
+            </div>
+            {% if truncated %}
+            <p class="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Showing the first {{ products|length }} matches. Search or pick a category to narrow it down.
+            </p>
+            {% endif %}
+            {% else %}
+            <div class="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+                <p class="text-base font-semibold text-slate-700">No products match that search.</p>
+                <p class="mt-1 text-sm text-slate-500">Try a different name, or clear the filters.</p>
+                <a href="/pos" class="mt-4 inline-block rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+                    Show everything
+                </a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- ================= cart ================= -->
+        <aside id="cart"
+               class="fixed inset-x-0 bottom-0 z-40 rounded-t-2xl border-t-2 border-amber-400 bg-white shadow-2xl
+                      lg:sticky lg:top-4 lg:col-span-1 lg:rounded-xl lg:border lg:border-slate-200 lg:shadow-sm"
+               aria-label="Current sale">
+
+            <button type="button" id="cartToggle"
+                    class="flex w-full items-center justify-between gap-3 px-4 py-3 lg:hidden"
+                    aria-expanded="false" aria-controls="cartBody">
+                <span class="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    Current sale
+                    <span id="cartBarCount" class="rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-900">0</span>
+                </span>
+                <span class="flex items-center gap-2">
+                    <span id="cartBarTotal" class="text-base font-bold text-slate-900">KES 0.00</span>
+                    <svg id="cartChevron" class="h-5 w-5 text-slate-500 transition-transform" fill="none"
+                         stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                    </svg>
+                </span>
+            </button>
+
+            <div id="cartBody" class="hidden max-h-[70vh] overflow-y-auto border-t border-slate-100 px-4 pb-4 lg:block lg:max-h-[calc(100vh-8rem)] lg:border-t-0 lg:pt-4">
+                <h2 class="mb-3 hidden text-lg font-bold text-slate-900 lg:block">Current sale</h2>
+
+                <p id="cartEmpty" class="py-6 text-center text-sm text-slate-500">
+                    No items yet.<br>Tap a product to add it.
+                </p>
+                <ul id="cartItems" class="hidden divide-y divide-slate-100"></ul>
+
+                <form id="checkoutForm" method="post" action="/pos/checkout" class="mt-3 space-y-3">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="idempotency_key" value="{{ checkout_token }}">
+                    <input type="hidden" name="cart" id="cartField" value="[]">
+
+                    <div class="flex items-center justify-between border-t border-slate-200 pt-3">
+                        <span class="text-base font-semibold text-slate-700">Total</span>
+                        <span id="cartTotal" class="text-xl font-bold text-slate-900">KES 0.00</span>
+                    </div>
+
+                    <fieldset>
+                        <legend class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment method</legend>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2.5 text-base font-semibold text-slate-700 has-[:checked]:border-amber-500 has-[:checked]:bg-amber-50 has-[:checked]:text-slate-900">
+                                <input type="radio" name="payment_method" value="cash" checked class="h-4 w-4 accent-amber-500">
+                                Cash
+                            </label>
+                            <label class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2.5 text-base font-semibold text-slate-700 has-[:checked]:border-amber-500 has-[:checked]:bg-amber-50 has-[:checked]:text-slate-900">
+                                <input type="radio" name="payment_method" value="mpesa" class="h-4 w-4 accent-amber-500">
+                                M-Pesa
+                            </label>
+                        </div>
+                        <p class="mt-1.5 text-xs text-slate-500">
+                            M-Pesa sales are saved as <strong>pending</strong> until an administrator
+                            confirms the transaction code.
+                        </p>
+                    </fieldset>
+
+                    <details class="rounded-lg bg-slate-50 px-3 py-2">
+                        <summary class="cursor-pointer text-xs font-semibold text-slate-600">Customer details (optional)</summary>
+                        <div class="mt-2 space-y-2">
+                            <input name="customer_name" maxlength="120" autocomplete="off"
+                                   placeholder="Customer name"
+                                   class="w-full rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                            <input name="customer_phone" type="tel" maxlength="20" autocomplete="off"
+                                   placeholder="Phone number"
+                                   class="w-full rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                            <input name="notes" maxlength="500" autocomplete="off"
+                                   placeholder="Note"
+                                   class="w-full rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                        </div>
+                    </details>
+
+                    <div class="flex gap-2">
+                        <button type="button" id="cartClear"
+                                class="rounded-lg border border-slate-300 px-3 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+                            Clear
+                        </button>
+                        <button type="submit" id="checkoutBtn" disabled
+                                class="flex-1 rounded-lg bg-amber-500 px-4 py-3 text-base font-bold text-slate-900 hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">
+                            Complete sale
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </aside>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* The till's cart. Totals shown here are a live preview for the cashier; the
+   authoritative figures are recalculated on the server from the database at
+   checkout, so nothing here can change what a customer is charged. */
+(function () {
+    var cart = {};
+    var listEl = document.getElementById('cartItems');
+    var emptyEl = document.getElementById('cartEmpty');
+    var totalEl = document.getElementById('cartTotal');
+    var barTotalEl = document.getElementById('cartBarTotal');
+    var barCountEl = document.getElementById('cartBarCount');
+    var fieldEl = document.getElementById('cartField');
+    var formEl = document.getElementById('checkoutForm');
+    var btnEl = document.getElementById('checkoutBtn');
+    var bodyEl = document.getElementById('cartBody');
+    var toggleEl = document.getElementById('cartToggle');
+    var chevronEl = document.getElementById('cartChevron');
+    if (!formEl) { return; }
+
+    function money(n) {
+        return 'KES ' + Number(n).toLocaleString('en-KE', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+    }
+
+    function stepButton(label, id, delta, disabled, aria) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.setAttribute('aria-label', aria);
+        b.className = 'h-8 w-8 rounded-md border border-slate-300 text-base font-bold leading-none ' +
+                      'text-slate-700 hover:bg-slate-100 disabled:opacity-40';
+        b.disabled = disabled;
+        b.addEventListener('click', function () {
+            var line = cart[id];
+            if (!line) { return; }
+            var next = line.qty + delta;
+            if (next < 1) { return; }
+            if (next > line.stock) {
+                b.setAttribute('aria-live', 'polite');
+                return;
+            }
+            line.qty = next;
+            render();
+        });
+        return b;
+    }
+
+    function render() {
+        var ids = Object.keys(cart);
+        var count = 0;
+        var total = 0;
+
+        listEl.textContent = '';
+        ids.forEach(function (id) {
+            var line = cart[id];
+            count += line.qty;
+            total += line.qty * line.price;
+
+            var li = document.createElement('li');
+            li.className = 'flex items-center gap-2 py-2.5';
+
+            var info = document.createElement('div');
+            info.className = 'min-w-0 flex-1';
+            var name = document.createElement('p');
+            name.className = 'truncate text-sm font-semibold text-slate-900';
+            name.textContent = line.name;
+            var unit = document.createElement('p');
+            unit.className = 'text-xs text-slate-500';
+            unit.textContent = money(line.price) + ' each';
+            info.appendChild(name);
+            info.appendChild(unit);
+
+            var qty = document.createElement('div');
+            qty.className = 'flex shrink-0 items-center gap-1';
+            qty.appendChild(stepButton('−', id, -1, line.qty <= 1,
+                                      'One less ' + line.name));
+            var num = document.createElement('span');
+            num.className = 'w-7 text-center text-sm font-bold tabular-nums text-slate-900';
+            num.textContent = line.qty;
+            qty.appendChild(num);
+            qty.appendChild(stepButton('+', id, 1, line.qty >= line.stock,
+                                       'One more ' + line.name));
+
+            var lineTotal = document.createElement('span');
+            lineTotal.className = 'w-20 shrink-0 text-right text-sm font-bold tabular-nums text-slate-900';
+            lineTotal.textContent = money(line.qty * line.price);
+
+            var del = document.createElement('button');
+            del.type = 'button';
+            del.textContent = '×';
+            del.className = 'ml-1 shrink-0 rounded-md p-1.5 text-lg leading-none text-slate-400 hover:bg-red-50 hover:text-red-600';
+            del.setAttribute('aria-label', 'Remove ' + line.name + ' from the sale');
+            del.addEventListener('click', function () {
+                delete cart[id];
+                render();
+            });
+
+            li.appendChild(info);
+            li.appendChild(qty);
+            li.appendChild(lineTotal);
+            li.appendChild(del);
+            listEl.appendChild(li);
+        });
+
+        var has = ids.length > 0;
+        emptyEl.classList.toggle('hidden', has);
+        listEl.classList.toggle('hidden', !has);
+        totalEl.textContent = money(total);
+        barTotalEl.textContent = money(total);
+        barCountEl.textContent = String(count);
+
+        fieldEl.value = JSON.stringify(ids.map(function (id) {
+            return { id: Number(id), qty: cart[id].qty };
+        }));
+        btnEl.disabled = !has;
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.pos-add'), function (card) {
+        card.addEventListener('click', function () {
+            var id = card.dataset.id;
+            var stock = parseInt(card.dataset.stock, 10) || 0;
+            var line = cart[id];
+            if (!line) {
+                line = cart[id] = {
+                    name: card.dataset.name,
+                    price: parseFloat(card.dataset.price) || 0,
+                    qty: 0,
+                    stock: stock
+                };
+            }
+            if (line.qty >= line.stock) { return; }
+            line.qty += 1;
+            render();
+        });
+    });
+
+    toggleEl.addEventListener('click', function () {
+        bodyEl.classList.toggle('hidden');
+        var open = !bodyEl.classList.contains('hidden');
+        toggleEl.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (chevronEl) { chevronEl.classList.toggle('rotate-180', open); }
+    });
+
+    document.getElementById('cartClear').addEventListener('click', function () {
+        if (!Object.keys(cart).length) { return; }
+        if (!window.confirm('Clear the current sale?')) { return; }
+        cart = {};
+        render();
+    });
+
+    formEl.addEventListener('submit', function (e) {
+        if (!Object.keys(cart).length) {
+            e.preventDefault();
+            return;
+        }
+        // Disabling the button guards against an impatient second tap. The
+        // idempotency key on the server is what actually makes it safe.
+        btnEl.disabled = true;
+        btnEl.textContent = 'Saving…';
+    });
+
+    // Coming back via the browser's back/forward cache restores the disabled
+    // button, so put it back in step with the cart that is still in memory.
+    window.addEventListener('pageshow', function () {
+        btnEl.textContent = 'Complete sale';
+        btnEl.disabled = !Object.keys(cart).length;
+    });
+
+    render();
+})();
+</script>
+{% endblock %}

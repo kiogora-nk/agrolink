@@ -3,9 +3,11 @@ BioFarm Fruits - Complete Integrated Application
 All features working together: Products, Orders, Contact, Training, CMS, Admin
 """
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file, send_from_directory, g, make_response
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import cast, or_
+from sqlalchemy import cast, func, or_, text, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload, selectinload
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -53,6 +55,11 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 }
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+# Static files (the compiled stylesheet, the logo, the small JS helpers) are
+# referenced through static_v(), which appends an mtime cache-buster, so they
+# are safe to cache hard in the browser instead of being re-validated on every
+# navigation. A rebuilt stylesheet gets a new ?v= and is fetched immediately.
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 # Formats browsers can't always display (iPhone .heic photos, .jfif saved
 # from browsers, TIFF/BMP/AVIF). These are accepted but re-encoded as JPEG
@@ -156,6 +163,313 @@ def _tailwind_css():
     return 'css/tailwind.css' if os.path.exists(path) else None
 
 
+# ============================================================================
+# IMAGE HANDLING
+#
+# Image fields are stored in three different shapes (/uploads/<file>, a full
+# external URL, or a legacy bare filename) and the referenced file is not
+# always still there. Everything below funnels those shapes through one
+# resolver that answers "what should this <img src> actually be?" and never
+# leaves the browser showing a broken-image icon or a stock photo standing in
+# for a missing product picture.
+# ============================================================================
+
+# Uploads are stored under random 32-hex names, so a given filename always
+# means the same bytes: safe to cache in the browser for a year.
+UPLOAD_CACHE_SECONDS = 31536000
+
+# Longest side an uploaded picture is kept at. Phone cameras produce 4000px+
+# photos that are several megabytes each; that is the single biggest reason
+# product pages felt slow on mobile data.
+IMAGE_MAX_DIMENSION = 1600
+IMAGE_FULL_QUALITY = 85
+# Card grids render at roughly 300px wide, so a 480px variant is sharp on a
+# normal phone and a fraction of the full picture's weight.
+IMAGE_THUMB_DIMENSION = 480
+IMAGE_THUMB_QUALITY = 80
+
+# Neutral "no picture" placeholder, used only when an image is genuinely
+# unavailable. Deliberately generic: substituting an unrelated stock photo
+# would hide the missing asset instead of surfacing it.
+#
+# It lives as a static file rather than an inline data URI. Inlining meant
+# every image-less card carried its own ~560-character copy of the same blob
+# - a listing with eight missing photos repeated it eight times - whereas a
+# static URL is ~30 characters, is fetched once, and is then cached. The
+# asset is versioned by static_v() so a redesign of it still reaches
+# returning visitors.
+PLACEHOLDER_PATH = 'img/placeholder.svg'
+
+
+def placeholder_image():
+    """URL of the shared placeholder graphic (needs a request context)."""
+    return static_v(PLACEHOLDER_PATH)
+
+
+def _request_cache(key, loader):
+    """Memoise a value on flask.g for the duration of one request.
+
+    A page render used to re-run the same few queries once per template call
+    (site copy eight times on the homepage, the upload index once per image).
+    Falls back to a plain load when there is no request context, so scripts
+    and CLI helpers still work.
+    """
+    try:
+        store = g.setdefault('_biofarm_cache', {})
+    except RuntimeError:      # no application/request context
+        return loader()
+    if key not in store:
+        store[key] = loader()
+    return store[key]
+
+
+def _site_content_map():
+    """Every editable CMS block in one query, memoised per request."""
+    return _request_cache('site_content', lambda: {
+        row.key: row.value for row in SiteContent.query.all()})
+
+
+def get_content(key, default=''):
+    """Fetch an editable content block by key.
+
+    Preserves the original contract exactly: a key that was never saved, or
+    was saved as NULL, falls back to the template default, while a key the
+    admin deliberately saved as an empty string stays empty. (Clearing a CMS
+    block means "no text here", not "put the seed value back".)
+    """
+    value = _site_content_map().get(key)
+    return default if value is None else value
+
+
+def set_content(key, value):
+    item = SiteContent.query.filter_by(key=key).first()
+    if item:
+        item.value = value
+    else:
+        db.session.add(SiteContent(key=key, value=value))
+    # Keep the per-request cache in step so an admin editing copy sees the new
+    # text on the very page they are redirected to.
+    try:
+        g.setdefault('_biofarm_cache', {})['site_content'] = None
+    except RuntimeError:
+        pass
+
+
+def _upload_index():
+    """Metadata for every stored upload, in one query per request.
+
+    filename -> {'width': int|None, 'thumb_width': int|None}. Keeping the
+    dimensions here lets the templates build an accurate srcset without one
+    lookup per image on the page.
+    """
+    def load():
+        rows = db.session.query(UploadedImage.filename, UploadedImage.width,
+                                UploadedImage.thumb_width).all()
+        return {name: {'width': width, 'thumb_width': thumb_width}
+                for name, width, thumb_width in rows}
+    return _request_cache('upload_index', load)
+
+
+def _uploaded_filenames():
+    """Names of uploads that can actually be served, memoised per request.
+
+    /uploads/<f> serves from the database first and falls back to the local
+    folder, so "available" means present in either. One query plus one
+    directory listing replaces a per-image os.path.exists() check.
+    """
+    def load():
+        names = set(_upload_index().keys())
+        try:
+            names |= set(os.listdir(app.config['UPLOAD_FOLDER']))
+        except OSError:
+            pass
+        return names
+    return _request_cache('uploaded_filenames', load)
+
+
+def upload_filename(value):
+    """Reduce a stored image value to the upload filename it refers to.
+
+    Returns None for anything that is not a reference to a served upload
+    (an external URL, a data: URI, a static path, an empty value).
+    """
+    if not value or not isinstance(value, str):
+        return None
+    value = value.strip()
+    if value.startswith('/uploads/'):
+        name = value[len('/uploads/'):].strip('/')
+        return name or None
+    if value.startswith(('http://', 'https://', '/', 'data:', 'blob:')):
+        return None
+    # A bare legacy filename, e.g. "40c808764def6258fb796a614bbff9d4.png".
+    return value if '/' not in value and ' ' not in value else None
+
+
+def upload_available(filename):
+    """Is this upload servable from the database or the local folder?"""
+    return bool(filename) and filename in _uploaded_filenames()
+
+
+def image_src(value, size=None):
+    """Resolve a stored image value into a usable <img src>.
+
+    Accepts the three shapes image fields are stored in and returns:
+      * external URLs, data: URIs and other absolute paths unchanged;
+      * a /uploads/ URL when that upload genuinely exists;
+      * the neutral inline placeholder otherwise (empty value, or a
+        reference to a file that is no longer available).
+
+    ``size='thumb'`` prefers the small card variant. It needs a request
+    context for url_for().
+    """
+    if not value or not isinstance(value, str):
+        return placeholder_image()
+    value = value.strip()
+    if not value:
+        return placeholder_image()
+    if value.startswith(('http://', 'https://', 'data:', 'blob:')):
+        return value
+    if value.startswith('/') and not value.startswith('/uploads/'):
+        return value
+
+    filename = upload_filename(value)
+    if not upload_available(filename):
+        return placeholder_image()
+    if size:
+        return url_for('uploaded_file', filename=filename, size=size)
+    return url_for('uploaded_file', filename=filename)
+
+
+def image_srcset(value):
+    """A ``srcset`` string offering the card thumbnail next to the full size.
+
+    Empty when there is only one real resolution to offer (external URLs and
+    images uploaded before thumbnails existed), so the browser simply uses
+    ``src``. Widths are the true stored widths, never guesses — a wrong ``w``
+    descriptor makes the browser pick a blurry file.
+    """
+    filename = upload_filename(value)
+    if not upload_available(filename):
+        return ''
+    meta = _upload_index().get(filename) or {}
+    # thumb_width is only set when a thumbnail was actually stored with it.
+    thumb_width, full_width = meta.get('thumb_width'), meta.get('width')
+    if not (thumb_width and full_width):
+        return ''
+    return (f"{url_for('uploaded_file', filename=filename, size='thumb')} {thumb_width}w, "
+            f"{url_for('uploaded_file', filename=filename)} {full_width}w")
+
+
+def static_v(filename):
+    """url_for a static asset with an mtime cache-buster.
+
+    Static files are served with a long cache lifetime; without a version in
+    the URL a rebuilt stylesheet would never reach returning visitors.
+    """
+    def mtimes():
+        stamps = {}
+        for folder in ('css', 'js', 'img'):
+            directory = os.path.join(app.static_folder, folder)
+            try:
+                for name in os.listdir(directory):
+                    full = os.path.join(directory, name)
+                    if os.path.isfile(full):
+                        stamps[f'{folder}/{name}'] = int(os.path.getmtime(full))
+            except OSError:
+                pass
+        return stamps
+
+    stamp = _request_cache('static_mtimes', mtimes).get(filename)
+    if not stamp:
+        return url_for('static', filename=filename)
+    return url_for('static', filename=filename, v=stamp)
+
+
+def _shrink(image, max_dimension):
+    """Scale an image down so its longest side is at most ``max_dimension``.
+
+    Never enlarges: a small picture stays exactly as it is.
+    """
+    from PIL import Image
+    width, height = image.size
+    longest = max(width, height)
+    if longest <= max_dimension:
+        return image
+    scale = max_dimension / float(longest)
+    return image.resize((max(1, int(round(width * scale))),
+                         max(1, int(round(height * scale)))),
+                        Image.LANCZOS)
+
+
+def _encode(image, fmt, quality):
+    out = BytesIO()
+    if fmt == 'PNG':
+        image.save(out, format='PNG', optimize=True)
+    else:
+        image.save(out, format=fmt, quality=quality, optimize=True)
+    return out.getvalue()
+
+
+def process_upload(data, ext):
+    """Make an uploaded picture web-friendly without damaging the original.
+
+    Returns a dict with the bytes to store, their dimensions and a card
+    thumbnail. An image that is already a sensible size and format is stored
+    byte-for-byte: nothing is re-encoded, so quality is never thrown away for
+    the common case. Animated GIFs are passed through untouched (re-encoding
+    would destroy the animation).
+    """
+    result = {'data': data, 'ext': ext,
+              'width': None, 'height': None,
+              'thumb_data': None, 'thumb_width': None, 'thumb_height': None}
+    if ext == 'gif':
+        return result
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(BytesIO(data)) as opened:
+            image = ImageOps.exif_transpose(opened)
+            image.load()
+            width, height = image.size
+            has_alpha = image.mode in ('RGBA', 'LA') or (
+                image.mode == 'P' and 'transparency' in image.info)
+
+            # --- thumbnail, always, from the original pixels ---------------
+            thumb = _shrink(image if not has_alpha else image.convert('RGBA'),
+                            IMAGE_THUMB_DIMENSION)
+            if has_alpha:
+                thumb_bytes = _encode(thumb, 'PNG', None)
+            else:
+                thumb_bytes = _encode(thumb.convert('RGB') if thumb.mode != 'RGB' else thumb,
+                                      'JPEG', IMAGE_THUMB_QUALITY)
+
+            result['thumb_data'] = thumb_bytes
+            result['thumb_width'], result['thumb_height'] = thumb.size
+
+            # --- full image: only touched when it is oversized -------------
+            if max(width, height) <= IMAGE_MAX_DIMENSION:
+                result['width'], result['height'] = width, height
+                return result
+
+            resized = _shrink(image, IMAGE_MAX_DIMENSION)
+            if ext in ('png',) and has_alpha:
+                new_data, new_ext = _encode(resized.convert('RGBA'), 'PNG', None), 'png'
+            elif ext in ('png', 'gif', 'bmp', 'tiff', 'tif'):
+                # A photograph saved as PNG/BMP/TIFF; JPEG is far smaller and
+                # these are not photographic formats anyone links to.
+                new_data, new_ext = _encode(resized.convert('RGB'), 'JPEG', IMAGE_FULL_QUALITY), 'jpg'
+            else:
+                fmt = 'WEBP' if ext == 'webp' else 'JPEG'
+                target = resized if resized.mode in ('RGB', 'L') else resized.convert('RGB')
+                new_data = _encode(target, fmt, IMAGE_FULL_QUALITY)
+                new_ext = 'webp' if fmt == 'WEBP' else 'jpg'
+
+            result.update(data=new_data, ext=new_ext,
+                          width=resized.size[0], height=resized.size[1])
+    except Exception as exc:  # noqa: BLE001 - never fail an upload over this
+        app.logger.warning('Image optimisation skipped: %s', exc)
+    return result
+
+
 def allowed_image(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
 
@@ -226,7 +540,15 @@ def save_uploaded_image(file_storage):
             return None, error or 'That image could not be processed.'
         ext = 'jpg'
         mimetype = 'image/jpeg'
+    # Shrink oversized pictures and build the card thumbnail before storing.
+    processed = process_upload(data, ext)
+    data = processed['data']
+    ext = processed['ext']
     filename = f"{secrets.token_hex(16)}.{ext}"
+    if ext == 'jpg':
+        mimetype = 'image/jpeg'
+    elif ext == 'webp':
+        mimetype = 'image/webp'
     with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'wb') as fh:
         fh.write(data)
     try:
@@ -234,6 +556,11 @@ def save_uploaded_image(file_storage):
             filename=filename,
             mimetype=mimetype,
             data=data,
+            thumb_data=processed['thumb_data'],
+            width=processed['width'],
+            height=processed['height'],
+            thumb_width=processed['thumb_width'],
+            thumb_height=processed['thumb_height'],
         ))
         db.session.commit()
     except Exception as exc:  # noqa: BLE001 - disk copy still works
@@ -272,6 +599,20 @@ class User(UserMixin, db.Model):
 
     def can_manage_products(self):
         return self.role in ('admin', 'chief_admin', 'farmer')
+
+    def can_use_pos(self):
+        """Who may open the till and ring up a sale.
+
+        Cashiers plus the existing administrators. Deliberately narrow: a
+        farmer or a customer has no business at the counter.
+        """
+        return self.role in ('cashier', 'admin', 'chief_admin')
+
+    def can_manage_pos(self):
+        """Who may confirm M-Pesa payments, void sales and read the daily
+        summary. Kept to administrators so a cashier cannot, on their own,
+        mark their own payment as received or erase a completed sale."""
+        return self.role in ('admin', 'chief_admin')
 
 class Product(db.Model):
     __tablename__ = 'products'
@@ -316,6 +657,124 @@ class Order(db.Model):
         if not self.receipt_number:
             self.receipt_number = f"BIO-{utcnow().strftime('%Y%m')}-{self.id:04d}"
         return self.receipt_number
+
+# ---------------------------------------------------------------------------
+# POINT OF SALE
+#
+# The shop counter records the same products the online store sells, so these
+# tables reference `products` rather than keeping a second catalogue. What
+# they do store in their own right is the *history* of a sale: the name and
+# unit price are copied onto each sale item at the moment of sale, because a
+# receipt has to keep showing what the customer actually paid even after the
+# product is re-priced. That is a snapshot of a past transaction, not a
+# duplicate of the live inventory record.
+# ---------------------------------------------------------------------------
+
+# Payment methods a cashier can pick. Card is deliberately absent: there is no
+# authorised card integration wired up, and the brief is explicit that card is
+# only offered where one exists.
+POS_PAYMENT_METHODS = ('cash', 'mpesa')
+# Cash is confirmed by the cashier physically taking it. M-Pesa stays pending
+# until an authorised user confirms it against the transaction code.
+POS_PENDING_METHODS = ('mpesa',)
+
+
+class Sale(db.Model):
+    """One completed (or voided) counter sale."""
+    __tablename__ = 'sales'
+    id = db.Column(db.Integer, primary_key=True)
+    sale_number = db.Column(db.String(24), unique=True)
+    cashier_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    customer_name = db.Column(db.String(120))
+    customer_phone = db.Column(db.String(20))
+    # All money is computed on the server from the product rows; the browser
+    # only ever sends product ids and quantities.
+    subtotal = db.Column(db.Float, nullable=False, default=0.0)
+    total = db.Column(db.Float, nullable=False, default=0.0)
+    payment_method = db.Column(db.String(20), nullable=False, default='cash')
+    # pending | confirmed | failed
+    payment_status = db.Column(db.String(20), nullable=False, default='pending')
+    # M-Pesa transaction code, recorded when the payment is confirmed.
+    payment_reference = db.Column(db.String(40))
+    # completed | voided. Voiding never deletes a row: it flips this flag and
+    # writes a reversing stock movement, so the audit trail stays intact.
+    status = db.Column(db.String(20), nullable=False, default='completed')
+    notes = db.Column(db.Text)
+    # Set from a per-checkout token so a double-tapped "Complete sale" (or a
+    # resubmitted form) cannot create two sales or deduct stock twice.
+    idempotency_key = db.Column(db.String(64), unique=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    confirmed_at = db.Column(db.DateTime)
+    confirmed_by_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    voided_at = db.Column(db.DateTime)
+    voided_by_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    void_reason = db.Column(db.Text)
+
+    cashier = db.relationship('User', foreign_keys=[cashier_id])
+    confirmed_by = db.relationship('User', foreign_keys=[confirmed_by_id])
+    voided_by = db.relationship('User', foreign_keys=[voided_by_id])
+    items = db.relationship('SaleItem', backref='sale',
+                            cascade='all, delete-orphan', lazy='selectin')
+
+    @property
+    def is_voided(self):
+        return self.status == 'voided'
+
+    @property
+    def item_count(self):
+        return sum(item.quantity for item in self.items)
+
+    def generate_sale_number(self):
+        if not self.sale_number:
+            self.sale_number = f"POS-{utcnow().strftime('%Y%m')}-{self.id:05d}"
+        return self.sale_number
+
+    def receipt_lines(self):
+        """Plain list of dicts for the receipt and PDF builders."""
+        return [{
+            'name': item.product_name,
+            'quantity': item.quantity,
+            'unit_price': item.unit_price,
+            'line_total': item.line_total,
+        } for item in self.items]
+
+
+class SaleItem(db.Model):
+    """A line on a sale. `product_name` and `unit_price` are copies taken at
+    the time of sale so the receipt is a faithful historical record."""
+    __tablename__ = 'sale_items'
+    id = db.Column(db.Integer, primary_key=True)
+    sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    product_name = db.Column(db.String(120), nullable=False)
+    unit_price = db.Column(db.Float, nullable=False)
+    quantity = db.Column(db.Integer, nullable=False, default=1)
+    line_total = db.Column(db.Float, nullable=False, default=0.0)
+
+    product = db.relationship('Product')
+
+
+class StockMovement(db.Model):
+    """Append-only stock ledger. Every change to Product.stock made through
+    the POS is written here, so a discrepancy can always be traced back to the
+    sale, void or adjustment that caused it."""
+    __tablename__ = 'stock_movements'
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    # Negative for stock leaving, positive for stock arriving.
+    change = db.Column(db.Integer, nullable=False)
+    # sale | void | adjustment | restock
+    reason = db.Column(db.String(20), nullable=False)
+    sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    balance_after = db.Column(db.Integer)
+    note = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    product = db.relationship('Product')
+    user = db.relationship('User')
+    sale = db.relationship('Sale')
+
 
 class ContactMessage(db.Model):
     __tablename__ = 'contact_messages'
@@ -389,6 +848,16 @@ class UploadedImage(db.Model):
     filename = db.Column(db.String(80), unique=True, nullable=False, index=True)
     mimetype = db.Column(db.String(50))
     data = db.Column(db.LargeBinary, nullable=False)
+    # Small variant for the product/card grids, so a listing page does not
+    # download six full-size photographs. NULL for images uploaded before
+    # thumbnails existed (and for animated GIFs) — those serve `data`.
+    thumb_data = db.Column(db.LargeBinary)
+    # True pixel dimensions, used for srcset width descriptors and to reserve
+    # space in the layout so images cannot shift the page as they load.
+    width = db.Column(db.Integer)
+    height = db.Column(db.Integer)
+    thumb_width = db.Column(db.Integer)
+    thumb_height = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=utcnow)
 
 class DiseaseDetection(db.Model):
@@ -521,18 +990,29 @@ def product_manager_required(f):
     return wrapper
 
 
-def get_content(key, default=''):
-    """Fetch an editable content block by key."""
-    item = SiteContent.query.filter_by(key=key).first()
-    return item.value if item and item.value is not None else default
+def pos_required(f):
+    """Allow cashiers and administrators onto the till."""
+    @wraps(f)
+    @login_required
+    def wrapper(*args, **kwargs):
+        if not current_user.can_use_pos():
+            flash('Point-of-sale access required.', 'error')
+            return redirect(url_for('home'))
+        return f(*args, **kwargs)
+    return wrapper
 
 
-def set_content(key, value):
-    item = SiteContent.query.filter_by(key=key).first()
-    if item:
-        item.value = value
-    else:
-        db.session.add(SiteContent(key=key, value=value))
+def pos_manager_required(f):
+    """Allow administrators only: payment confirmation, voids, reports."""
+    @wraps(f)
+    @login_required
+    def wrapper(*args, **kwargs):
+        if not current_user.can_manage_pos():
+            flash('Administrator access required for that action.', 'error')
+            return redirect(url_for('pos'))
+        return f(*args, **kwargs)
+    return wrapper
+
 
 # ============================================================================
 # CONTEXT PROCESSOR - Makes global variables available in all templates
@@ -566,19 +1046,25 @@ def inject_globals():
         'csrf_token': generate_csrf(),
         'content': get_content,
         'now': utcnow(),
-        # Resolve a stored product image value into a usable <img src>,
-        # whichever format it is: full URL (/uploads/..., http(s)://...) or
-        # a legacy bare uploaded filename.
-        'image_src': lambda value: (
-            value if not value or value.startswith(('http://', 'https://', '/', 'data:'))
-            else url_for('uploaded_file', filename=value)),
+        # Resolve a stored image value into a usable <img src>, whichever
+        # format it is (/uploads/..., http(s)://..., or a legacy bare
+        # filename), falling back to a neutral placeholder when the file is
+        # genuinely unavailable so no page shows a broken-image icon.
+        'image_src': image_src,
+        'image_srcset': image_srcset,
+        'placeholder_image': placeholder_image(),
+        'static_v': static_v,
         # Notification bell in the navbar: unread count + latest items.
+        # Memoised per request so a page that renders more than one template
+        # does not repeat the lookups.
         'unread_notifications': (
-            Notification.query.filter_by(user_id=current_user.id, read=False).count()
+            _request_cache('unread_notifications', lambda: Notification.query
+                           .filter_by(user_id=current_user.id, read=False).count())
             if current_user.is_authenticated else 0),
         'recent_notifications': (
-            Notification.query.filter_by(user_id=current_user.id)
-                .order_by(Notification.created_at.desc()).limit(5).all()
+            _request_cache('recent_notifications', lambda: Notification.query
+                           .filter_by(user_id=current_user.id)
+                           .order_by(Notification.created_at.desc()).limit(5).all())
             if current_user.is_authenticated else []),
     }
 
@@ -588,55 +1074,90 @@ def inject_globals():
 
 @app.route('/')
 def home():
-    """Homepage - Featured products and statistics"""
-    featured_products = Product.query.filter_by(status='approved', featured=True).limit(8).all()
-    latest_products = Product.query.filter_by(status='approved').order_by(Product.created_at.desc()).limit(8).all()
-    fruits = Product.query.filter_by(status='approved', category='fruits').limit(8).all()
-    seedlings = Product.query.filter_by(status='approved', category='seedlings').limit(8).all()
-    reviews = Review.query.order_by(Review.created_at.desc()).limit(6).all()
+    """Homepage - featured products, latest products and testimonials.
 
-    # index.html shows a dedicated "Featured" section when any exist, and
-    # always lists the latest products below it.
-    stats = {
-        'products': Product.query.filter_by(status='approved').count(),
-        'customers': User.query.filter_by(role='customer').count(),
-        'farmers': User.query.filter_by(role='farmer').count(),
-        'reviews': Review.query.count(),
-        'orders': Order.query.count(),
-        'training': TrainingSession.query.filter_by(status='completed').count()
-    }
+    Only the three collections index.html actually renders are queried. The
+    view previously also built four product lists ("fruits", "seedlings",
+    "latest") and six COUNT() statistics that no template ever read - ten
+    wasted round trips on the busiest page in the site. The relationships the
+    cards walk (product.farmer, review.user, review.product) are eager-loaded
+    so rendering does not fire a query per card.
+    """
+    products = (Product.query
+                .filter_by(status='approved')
+                .options(joinedload(Product.farmer))
+                .order_by(Product.created_at.desc())
+                .limit(8).all())
+    featured = (Product.query
+                .filter_by(status='approved', featured=True)
+                .options(joinedload(Product.farmer))
+                .order_by(Product.created_at.desc())
+                .limit(8).all())
+    reviews = (Review.query
+               .options(joinedload(Review.user), joinedload(Review.product))
+               .order_by(Review.created_at.desc())
+               .limit(6).all())
+
+    # Hero tiles: the images an admin picked in the CMS first, then real
+    # photographs of approved products to fill the remaining slots. The hero
+    # used to hard-code four remote Unsplash photos, which put four
+    # third-party round trips on the critical path of the slowest page and
+    # showed produce this business does not sell. When nothing is available
+    # the template drops the panel entirely rather than showing a stranger's
+    # picture.
+    hero_tiles = []
+    for slot in range(1, 5):
+        value = get_content(f'hero_image_{slot}')
+        if value:
+            hero_tiles.append({'image': value,
+                               'alt': get_content(f'hero_image_{slot}_alt') or 'BioFarm produce'})
+    if len(hero_tiles) < 4:
+        candidates = (Product.query
+                      .filter(Product.status == 'approved',
+                              Product.image.isnot(None), Product.image != '')
+                      .options(joinedload(Product.farmer))
+                      .order_by(Product.featured.desc(), Product.created_at.desc())
+                      .limit(4).all())
+        for product in candidates:
+            if len(hero_tiles) >= 4:
+                break
+            hero_tiles.append({'image': product.image, 'alt': product.name})
 
     return render_template('index.html',
-                         products=latest_products,
-                         featured=featured_products,
-                         latest=latest_products,
-                         fruits=fruits,
-                         seedlings=seedlings,
+                         products=products,
+                         featured=featured,
                          reviews=reviews,
-                         stats=stats)
+                         hero_tiles=hero_tiles)
 
 @app.route('/products')
 def products():
-    """Product listing page with filters"""
+    """Product listing page with filters, paginated."""
     category = request.args.get('category')
     search = request.args.get('search')
-    
+    page = request.args.get('page', 1, type=int) or 1
+    per_page = 12
+
     query = Product.query.filter_by(status='approved')
-    
+
     if category and category != 'all':
         query = query.filter_by(category=category)
     if search:
         query = query.filter(
-            Product.name.ilike(f'%{search}%') | 
+            Product.name.ilike(f'%{search}%') |
             Product.description.ilike(f'%{search}%')
         )
-    
-    products = query.order_by(Product.created_at.desc()).all()
+
+    # A listing page never needs the whole catalogue in memory: with a few
+    # hundred products the old unpaginated .all() shipped every row and every
+    # image reference in one response on every visit.
+    pagination = query.order_by(Product.created_at.desc())\
+                      .paginate(page=page, per_page=per_page, error_out=False)
     categories = db.session.query(Product.category).distinct().filter_by(status='approved').all()
-    categories = [c[0] for c in categories if c[0]]
-    
-    return render_template('products.html', 
-                         products=products, 
+    categories = sorted(c[0] for c in categories if c[0])
+
+    return render_template('products.html',
+                         products=pagination.items,
+                         pagination=pagination,
                          categories=categories,
                          selected_category=category,
                          search=search)
@@ -1272,13 +1793,29 @@ def public_profile(username):
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
     """Serve uploaded images - from the database first (images survive
-    redeploys there), falling back to the local uploads folder."""
+    redeploys there), falling back to the local uploads folder.
+
+    ``?size=thumb`` serves the small card variant when one exists. Uploads are
+    named with random hex and never rewritten, so responses are immutable and
+    cached hard by the browser.
+    """
     img = UploadedImage.query.filter_by(filename=filename).first()
     if img and img.data:
-        mimetype = img.mimetype if img.mimetype and img.mimetype.startswith('image/') else 'image/jpeg'
-        return send_file(BytesIO(img.data), mimetype=mimetype,
-                         max_age=86400)
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+        want_thumb = request.args.get('size') == 'thumb'
+        if want_thumb and img.thumb_data:
+            data, mimetype = img.thumb_data, 'image/jpeg'
+        else:
+            data, mimetype = img.data, img.mimetype or 'image/jpeg'
+        if not mimetype.startswith('image/'):
+            mimetype = 'image/jpeg'
+        response = make_response(send_file(BytesIO(data), mimetype=mimetype,
+                                           max_age=UPLOAD_CACHE_SECONDS))
+        response.headers['Cache-Control'] = f'public, max-age={UPLOAD_CACHE_SECONDS}, immutable'
+        return response
+    response = make_response(send_from_directory(
+        app.config['UPLOAD_FOLDER'], filename, max_age=UPLOAD_CACHE_SECONDS))
+    response.headers['Cache-Control'] = f'public, max-age={UPLOAD_CACHE_SECONDS}, immutable'
+    return response
 
 @app.route('/order/<int:id>/receipt')
 @login_required
@@ -1312,12 +1849,18 @@ def download_receipt(id):
 
 def _logo_filename():
     """Static-relative path of the brand logo, whichever filename it was
-    uploaded under (img/logo.png, img/logo.jpg, ...)."""
-    static = app.static_folder or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
-    for name in ('img/logo.png', 'img/logo.jpg', 'img/logo.png.jpg', 'img/logo.jpeg'):
-        if os.path.exists(os.path.join(static, name)):
-            return name
-    return None
+    uploaded under (img/logo.png, img/logo.jpg, ...).
+
+    Memoised per request: this runs from the context processor, so without
+    the cache every render stat()ed four candidate paths.
+    """
+    def find():
+        static = app.static_folder or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+        for name in ('img/logo.png', 'img/logo.jpg', 'img/logo.png.jpg', 'img/logo.jpeg'):
+            if os.path.exists(os.path.join(static, name)):
+                return name
+        return None
+    return _request_cache('logo_filename', find)
 
 
 def _logo_path():
@@ -2111,7 +2654,7 @@ def set_user_role(id):
     """Chief admin promotes/demotes a user."""
     user = User.query.get_or_404(id)
     role = request.form.get('role')
-    if role not in ('customer', 'farmer', 'admin', 'chief_admin'):
+    if role not in ('customer', 'farmer', 'cashier', 'admin', 'chief_admin'):
         flash('Invalid role.', 'error')
         return redirect(url_for('admin_users'))
     if user.id == current_user.id and role != 'chief_admin':
@@ -2211,7 +2754,7 @@ def create_admin():
         password = request.form.get('password') or ''
         role = request.form.get('role', 'admin')
 
-        if role not in ('admin', 'chief_admin', 'farmer'):
+        if role not in ('admin', 'chief_admin', 'farmer', 'cashier'):
             role = 'admin'
         if not username or not email or not password:
             flash('Username, email and password are required.', 'error')
@@ -2859,6 +3402,100 @@ def seed_data():
             db.session.commit()
             print('Site content seeded!')
 
+def ensure_indexes():
+    """Create the indexes the hot queries actually rely on, idempotently.
+
+    db.create_all() only creates indexes declared on the model, which does
+    nothing for tables that already exist in production. Each entry below is
+    justified by a query the application really runs (see the comment on each
+    group) - this is not a blanket "index everything" pass, which would slow
+    writes down for no gain.
+
+    CREATE INDEX IF NOT EXISTS is supported by both Postgres and SQLite, so
+    running this on every startup is a cheap no-op after the first time.
+    """
+    from sqlalchemy import text, inspect as sa_inspect
+    existing = set(sa_inspect(db.engine).get_table_names())
+    for name, table, columns in _INDEXES:
+        if table not in existing:
+            continue
+        try:
+            db.session.execute(text(
+                f'CREATE INDEX IF NOT EXISTS "{name}" ON "{table}" ({columns})'))
+            db.session.commit()
+        except Exception as exc:  # noqa: BLE001 - an index is never fatal
+            db.session.rollback()
+            app.logger.warning('Index %s skipped: %s', name, exc)
+
+
+# name, table, columns. Grouped by the query each one serves.
+_INDEXES = [
+    # The unread notification badge renders on every page for any signed-in
+    # user (inject_globals), making this the hottest lookup in the app.
+    ('ix_notifications_user_read', 'notifications', 'user_id, read'),
+    ('ix_notifications_user_created', 'notifications', 'user_id, created_at'),
+    # Product listing (WHERE status ORDER BY created_at), category filter and
+    # the homepage featured strip.
+    ('ix_products_status_created', 'products', 'status, created_at'),
+    ('ix_products_status_category', 'products', 'status, category'),
+    ('ix_products_status_featured', 'products', 'status, featured'),
+    ('ix_products_farmer', 'products', 'farmer_id'),
+    # Order history (my_orders) and the admin order queue.
+    ('ix_orders_user_created', 'orders', 'user_id, created_at'),
+    ('ix_orders_status_created', 'orders', 'status, created_at'),
+    # Reviews on a product page, plus the "has this user reviewed it" check.
+    ('ix_reviews_product_created', 'reviews', 'product_id, created_at'),
+    ('ix_reviews_user', 'reviews', 'user_id'),
+    # Public blog listing.
+    ('ix_blog_posts_published_created', 'blog_posts', 'published, created_at'),
+    # POS: the daily summary groups completed sales by day and payment method.
+    ('ix_sales_created_status', 'sales', 'created_at, status'),
+    ('ix_sales_cashier_created', 'sales', 'cashier_id, created_at'),
+    ('ix_sale_items_sale', 'sale_items', 'sale_id'),
+    ('ix_sale_items_product', 'sale_items', 'product_id'),
+    ('ix_stock_movements_product_created', 'stock_movements', 'product_id, created_at'),
+]
+
+
+def backfill_image_thumbnails(limit=300):
+    """Generate the small card variant for images stored before thumbnails
+    existed, so legacy products stop serving full-size photographs in the
+    grids too.
+
+    Only the thumbnail and the recorded dimensions are added - the stored
+    original bytes are never rewritten, and images already uploaded keep the
+    exact file they were uploaded as. Bounded and idempotent.
+    """
+    rows = (UploadedImage.query
+            .filter(UploadedImage.thumb_data.is_(None),
+                    UploadedImage.data.isnot(None))
+            .limit(limit).all())
+    if not rows:
+        return
+    from PIL import Image
+    changed = 0
+    for row in rows:
+        try:
+            ext = row.filename.rsplit('.', 1)[-1].lower() if '.' in row.filename else 'jpg'
+            processed = process_upload(row.data, ext)
+            if not processed['thumb_data']:
+                continue
+            row.thumb_data = processed['thumb_data']
+            row.thumb_width = processed['thumb_width']
+            row.thumb_height = processed['thumb_height']
+            if row.width is None:
+                # Dimensions of the bytes actually stored, not of the
+                # optimised copy process_upload would have produced.
+                with Image.open(BytesIO(row.data)) as stored:
+                    row.width, row.height = stored.size
+            changed += 1
+        except Exception as exc:  # noqa: BLE001 - skip any unreadable row
+            app.logger.warning('Thumbnail backfill skipped %s: %s', row.filename, exc)
+    if changed:
+        db.session.commit()
+        print(f'Generated card thumbnails for {changed} existing image(s).')
+
+
 def sync_schema():
     """Self-healing migration: add any model columns that are missing from
     existing tables so schema drift never crashes the app again. Brand-new
@@ -2968,14 +3605,469 @@ def init_db():
         db.create_all()
         sync_schema()
         fix_id_sequences()
+        ensure_indexes()
         seed_data()
         backfill_uploads_to_db()
+        backfill_image_thumbnails()
 
 
 def create_app():
     """Gunicorn entry point: return a fully-initialised app."""
     init_db()
     return app
+
+
+# ============================================================================
+# POINT OF SALE - routes
+#
+# A till that sells the existing product catalogue. It shares the products,
+# the users and the session with the rest of the app rather than keeping its
+# own copies of anything.
+# ============================================================================
+
+# How many catalogue tiles the till shows at once. The counter needs the whole
+# range reachable in a search or two, not a paged archive.
+POS_CATALOGUE_LIMIT = 60
+POS_SALES_PER_PAGE = 20
+
+
+def _parse_cart(raw):
+    """Turn the submitted cart JSON into {product_id: quantity}.
+
+    The browser is only trusted for *which* products and *how many* - never
+    for prices or totals, which are read from the database at checkout. A
+    malformed payload is rejected outright rather than half-interpreted.
+    """
+    try:
+        data = json.loads(raw or '')
+    except (TypeError, ValueError):
+        return None, 'The cart could not be read. Please try again.'
+    if not isinstance(data, list) or not data:
+        return None, 'Add at least one item before completing the sale.'
+    if len(data) > 50:
+        return None, 'A single sale cannot contain more than 50 different items.'
+    merged = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            return None, 'The cart could not be read. Please try again.'
+        try:
+            product_id = int(entry.get('id'))
+            quantity = int(entry.get('qty'))
+        except (TypeError, ValueError):
+            return None, 'The cart contained an item with an invalid quantity.'
+        if quantity < 1:
+            return None, 'Quantities must be at least 1.'
+        if quantity > 1000:
+            return None, 'A single line cannot exceed 1000 units.'
+        merged[product_id] = merged.get(product_id, 0) + quantity
+        if merged[product_id] > 1000:
+            return None, 'A single line cannot exceed 1000 units.'
+    return merged, None
+
+
+def _read_stock_balances(product_ids):
+    """Current stock straight from the database, bypassing any stale
+    in-session copy, so the ledger records what stock actually became."""
+    return dict(db.session.query(Product.id, Product.stock)
+                .filter(Product.id.in_(product_ids)).all())
+
+
+@app.route('/pos')
+@pos_required
+def pos():
+    """The till: find a product, build a cart, take payment."""
+    search = (request.args.get('search') or '').strip()
+    category = (request.args.get('category') or '').strip()
+
+    query = Product.query.filter(Product.status == 'approved')
+    if search:
+        like = f'%{search}%'
+        # Products carry no SKU or barcode field, so the name is the
+        # identifier staff actually have. Category and sub-category are
+        # included because a cashier often knows "it's a seedling" before
+        # they know the variety name.
+        query = query.filter(or_(Product.name.ilike(like),
+                                 Product.category.ilike(like),
+                                 Product.sub_category.ilike(like)))
+    if category:
+        query = query.filter(Product.category == category)
+
+    products = (query.order_by(Product.name.asc())
+                .limit(POS_CATALOGUE_LIMIT).all())
+    categories = [name for (name,) in
+                  db.session.query(Product.category)
+                  .filter(Product.status == 'approved', Product.category.isnot(None))
+                  .distinct().order_by(Product.category).all() if name]
+
+    return render_template(
+        'pos/index.html',
+        products=products,
+        categories=categories,
+        search=search,
+        category=category,
+        # A fresh token per page load. The unique column on Sale is what
+        # actually stops a double submission, but starting from a new token
+        # each time keeps the normal case clean.
+        checkout_token=secrets.token_urlsafe(24),
+        truncated=len(products) >= POS_CATALOGUE_LIMIT,
+    )
+
+
+@app.route('/pos/checkout', methods=['POST'])
+@pos_required
+@_rate('60 per minute')
+def pos_checkout():
+    """Record a counter sale.
+
+    Everything that decides money or stock happens here: the cart is
+    re-priced from the database, stock is deducted with a conditional UPDATE
+    so it can never go negative, and the whole thing lands in one
+    transaction. If any part fails, nothing is written.
+    """
+    key = (request.form.get('idempotency_key') or '').strip()
+    if not key or len(key) > 64:
+        flash('That checkout could not be verified. Please try again.', 'error')
+        return redirect(url_for('pos'))
+
+    # A double-tapped "Complete sale", a back-button resubmit or a retried
+    # request must not ring the sale up twice or deduct stock twice. Seeing
+    # the key already means the sale landed, so send the cashier to its
+    # receipt instead.
+    already = Sale.query.filter_by(idempotency_key=key).first()
+    if already:
+        flash(f'Sale {already.sale_number or already.id} was already completed.',
+              'info')
+        return redirect(url_for('pos_receipt', id=already.id))
+
+    cart, error = _parse_cart(request.form.get('cart'))
+    if error:
+        flash(error, 'error')
+        return redirect(url_for('pos'))
+
+    payment_method = (request.form.get('payment_method') or 'cash').strip().lower()
+    if payment_method not in POS_PAYMENT_METHODS:
+        flash('Choose a valid payment method.', 'error')
+        return redirect(url_for('pos'))
+
+    product_ids = list(cart)
+    products = {p.id: p for p in
+                Product.query.filter(Product.id.in_(product_ids)).all()}
+    for product_id in product_ids:
+        product = products.get(product_id)
+        if product is None or product.status != 'approved':
+            flash('One of the items is no longer on sale. '
+                  'Please refresh the till.', 'error')
+            return redirect(url_for('pos'))
+
+    # Price the sale from the database. The browser's idea of the price is
+    # never used, so a tampered form cannot change what is charged.
+    lines = []
+    subtotal = 0.0
+    for product_id in product_ids:
+        product = products[product_id]
+        quantity = cart[product_id]
+        unit_price = round(float(product.price or 0), 2)
+        line_total = round(unit_price * quantity, 2)
+        subtotal += line_total
+        lines.append((product, unit_price, quantity, line_total))
+    subtotal = round(subtotal, 2)
+
+    # No tax line is added: the business has not supplied a tax registration
+    # or a rate, and inventing one would put wrong figures on a receipt.
+    total = subtotal
+
+    cash_paid = payment_method not in POS_PENDING_METHODS
+    sale = Sale(
+        cashier_id=current_user.id,
+        customer_name=(request.form.get('customer_name') or '').strip()[:120] or None,
+        customer_phone=(request.form.get('customer_phone') or '').strip()[:20] or None,
+        subtotal=subtotal,
+        total=total,
+        payment_method=payment_method,
+        # Cash is confirmed the moment the cashier takes it. M-Pesa stays
+        # pending until an administrator confirms it against the transaction
+        # code - it is never marked paid on the strength of the till alone.
+        payment_status='confirmed' if cash_paid else 'pending',
+        status='completed',
+        notes=(request.form.get('notes') or '').strip()[:500] or None,
+        idempotency_key=key,
+    )
+    if cash_paid:
+        sale.confirmed_at = utcnow()
+        sale.confirmed_by_id = current_user.id
+
+    try:
+        db.session.add(sale)
+        db.session.flush()          # assigns sale.id
+
+        # Conditional decrement: the row is only updated if it still holds
+        # enough stock at the moment the statement runs. Two tills selling the
+        # last unit therefore cannot both succeed - the second sees rowcount 0.
+        for product, _unit_price, quantity, _line_total in lines:
+            result = db.session.execute(
+                update(Product)
+                .where(Product.id == product.id, Product.stock >= quantity)
+                .values(stock=Product.stock - quantity)
+                .execution_options(synchronize_session=False))
+            if result.rowcount != 1:
+                db.session.rollback()
+                flash(f'Not enough stock left for {product.name}. '
+                      'No sale was recorded.', 'error')
+                return redirect(url_for('pos'))
+
+        sale.generate_sale_number()
+
+        for product, unit_price, quantity, line_total in lines:
+            db.session.add(SaleItem(
+                sale_id=sale.id,
+                product_id=product.id,
+                product_name=product.name,
+                unit_price=unit_price,
+                quantity=quantity,
+                line_total=line_total))
+
+        balances = _read_stock_balances(product_ids)
+        for product, _unit_price, quantity, _line_total in lines:
+            db.session.add(StockMovement(
+                product_id=product.id,
+                change=-quantity,
+                reason='sale',
+                sale_id=sale.id,
+                user_id=current_user.id,
+                balance_after=balances.get(product.id),
+                note=f'Sale {sale.sale_number}'))
+
+        db.session.commit()
+    except IntegrityError:
+        # Two requests carrying the same key raced past the lookup above; the
+        # unique index caught the second. Show the sale that did land.
+        db.session.rollback()
+        existing = Sale.query.filter_by(idempotency_key=key).first()
+        if existing is not None:
+            flash(f'Sale {existing.sale_number or existing.id} was already '
+                  'completed.', 'info')
+            return redirect(url_for('pos_receipt', id=existing.id))
+        flash('That sale could not be completed. Nothing was recorded.', 'error')
+        return redirect(url_for('pos'))
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('POS checkout failed')
+        flash('That sale could not be completed. Nothing was recorded.', 'error')
+        return redirect(url_for('pos'))
+
+    if sale.payment_status == 'pending':
+        flash(f'Sale {sale.sale_number} recorded. '
+              'M-Pesa payment is pending confirmation.', 'success')
+    else:
+        flash(f'Sale {sale.sale_number} completed.', 'success')
+    return redirect(url_for('pos_receipt', id=sale.id))
+
+
+@app.route('/pos/sales')
+@pos_required
+def pos_sales():
+    """Sale history. A cashier sees their own; an administrator sees all."""
+    page = request.args.get('page', 1, type=int)
+    query = Sale.query
+    if not current_user.can_manage_pos():
+        query = query.filter(Sale.cashier_id == current_user.id)
+
+    pagination = (query.order_by(Sale.created_at.desc(), Sale.id.desc())
+                  .paginate(page=page, per_page=POS_SALES_PER_PAGE,
+                            error_out=False))
+    return render_template('pos/sales.html',
+                           sales=pagination.items,
+                           pagination=pagination,
+                           scope='all' if current_user.can_manage_pos() else 'mine')
+
+
+@app.route('/pos/sale/<int:id>/receipt')
+@pos_required
+def pos_receipt(id):
+    """Printable receipt for one sale."""
+    sale = Sale.query.get_or_404(id)
+    if not current_user.can_manage_pos() and sale.cashier_id != current_user.id:
+        flash('You can only view your own sales.', 'error')
+        return redirect(url_for('pos_sales'))
+    return render_template('pos/receipt.html', sale=sale)
+
+
+@app.route('/pos/sale/<int:id>/payment', methods=['POST'])
+@pos_manager_required
+def pos_update_payment(id):
+    """Confirm or mark failed an M-Pesa payment.
+
+    There is no M-Pesa API integration configured, so confirmation is an
+    authorised manual act: an administrator records the transaction code they
+    have checked, and the sale keeps a record of who confirmed it and when.
+    A cashier cannot confirm their own till.
+    """
+    sale = Sale.query.get_or_404(id)
+    if sale.is_voided:
+        flash('That sale was voided, so its payment cannot be changed.', 'error')
+        return redirect(url_for('pos_receipt', id=sale.id))
+    if sale.payment_method not in POS_PENDING_METHODS:
+        flash('Only pending mobile-money payments need confirming.', 'info')
+        return redirect(url_for('pos_receipt', id=sale.id))
+
+    action = (request.form.get('action') or '').strip().lower()
+    if action == 'confirm':
+        reference = (request.form.get('payment_reference') or '').strip().upper()
+        if not re.fullmatch(r'[A-Z0-9]{6,20}', reference):
+            flash('Enter the M-Pesa transaction code (6-20 letters and digits).',
+                  'error')
+            return redirect(url_for('pos_receipt', id=sale.id))
+        sale.payment_reference = reference
+        sale.payment_status = 'confirmed'
+        sale.confirmed_at = utcnow()
+        sale.confirmed_by_id = current_user.id
+        db.session.commit()
+        app.logger.info('POS sale %s payment confirmed by %s (ref %s)',
+                        sale.sale_number, current_user.username, reference)
+        flash(f'Payment for {sale.sale_number} confirmed.', 'success')
+    elif action == 'fail':
+        sale.payment_status = 'failed'
+        sale.confirmed_at = utcnow()
+        sale.confirmed_by_id = current_user.id
+        db.session.commit()
+        app.logger.info('POS sale %s payment marked failed by %s',
+                        sale.sale_number, current_user.username)
+        flash(f'Payment for {sale.sale_number} marked as failed.', 'success')
+    else:
+        flash('Unrecognised payment action.', 'error')
+
+    return redirect(url_for('pos_receipt', id=sale.id))
+
+
+@app.route('/pos/sale/<int:id>/void', methods=['POST'])
+@pos_manager_required
+def pos_void_sale(id):
+    """Reverse a sale without deleting it.
+
+    The sale row stays, its items stay, and the stock goes back through a
+    recorded movement. History therefore still shows that the sale happened
+    and that it was reversed, by whom, and why.
+    """
+    sale = Sale.query.get_or_404(id)
+    if sale.is_voided:
+        flash('That sale has already been voided.', 'info')
+        return redirect(url_for('pos_receipt', id=sale.id))
+
+    reason = (request.form.get('reason') or '').strip()
+    if len(reason) < 3:
+        flash('Please give a reason for voiding this sale.', 'error')
+        return redirect(url_for('pos_receipt', id=sale.id))
+
+    try:
+        items = list(sale.items)
+        product_ids = [item.product_id for item in items]
+
+        for item in items:
+            db.session.execute(
+                update(Product)
+                .where(Product.id == item.product_id)
+                .values(stock=Product.stock + item.quantity)
+                .execution_options(synchronize_session=False))
+
+        balances = _read_stock_balances(product_ids)
+        for item in items:
+            db.session.add(StockMovement(
+                product_id=item.product_id,
+                change=item.quantity,
+                reason='void',
+                sale_id=sale.id,
+                user_id=current_user.id,
+                balance_after=balances.get(item.product_id),
+                note=f'Void {sale.sale_number}: {reason[:150]}'))
+
+        sale.status = 'voided'
+        sale.voided_at = utcnow()
+        sale.voided_by_id = current_user.id
+        sale.void_reason = reason[:500]
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('POS void failed for sale %s', id)
+        flash('The sale could not be voided. Nothing was changed.', 'error')
+        return redirect(url_for('pos_receipt', id=id))
+
+    app.logger.info('POS sale %s voided by %s: %s',
+                    sale.sale_number, current_user.username, reason)
+    flash(f'Sale {sale.sale_number} voided and stock returned.', 'success')
+    return redirect(url_for('pos_receipt', id=sale.id))
+
+
+@app.route('/pos/summary')
+@pos_manager_required
+def pos_summary():
+    """Daily takings, split so pending money is never counted as taken."""
+    day = (request.args.get('date') or '').strip()
+    if day:
+        try:
+            day_start = datetime.strptime(day, '%Y-%m-%d').replace(
+                tzinfo=timezone.utc)
+        except ValueError:
+            flash('That date could not be read. Showing today instead.', 'error')
+            return redirect(url_for('pos_summary'))
+    else:
+        now = utcnow()
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day = day_start.strftime('%Y-%m-%d')
+    day_end = day_start + timedelta(days=1)
+
+    window = (Sale.created_at >= day_start, Sale.created_at < day_end)
+
+    completed = (db.session.query(func.count(Sale.id),
+                                  func.coalesce(func.sum(Sale.total), 0.0))
+                 .filter(Sale.status == 'completed', *window).one())
+    paid = (db.session.query(func.count(Sale.id),
+                             func.coalesce(func.sum(Sale.total), 0.0))
+            .filter(Sale.status == 'completed',
+                    Sale.payment_status == 'confirmed', *window).one())
+    pending = (db.session.query(func.count(Sale.id),
+                                func.coalesce(func.sum(Sale.total), 0.0))
+               .filter(Sale.status == 'completed',
+                       Sale.payment_status == 'pending', *window).one())
+    failed = (db.session.query(func.count(Sale.id),
+                               func.coalesce(func.sum(Sale.total), 0.0))
+              .filter(Sale.status == 'completed',
+                      Sale.payment_status == 'failed', *window).one())
+    voided = (db.session.query(func.count(Sale.id),
+                               func.coalesce(func.sum(Sale.total), 0.0))
+              .filter(Sale.status == 'voided', *window).one())
+
+    by_method = (db.session.query(Sale.payment_method,
+                                  func.count(Sale.id),
+                                  func.coalesce(func.sum(Sale.total), 0.0))
+                 .filter(Sale.status == 'completed', *window)
+                 .group_by(Sale.payment_method).all())
+
+    by_cashier = (db.session.query(User.username, func.count(Sale.id),
+                                   func.coalesce(func.sum(Sale.total), 0.0))
+                  .join(User, User.id == Sale.cashier_id)
+                  .filter(Sale.status == 'completed', *window)
+                  .group_by(User.username)
+                  .order_by(func.sum(Sale.total).desc()).all())
+
+    best_sellers = (db.session.query(SaleItem.product_name,
+                                     func.sum(SaleItem.quantity),
+                                     func.coalesce(func.sum(SaleItem.line_total), 0.0))
+                    .join(Sale, Sale.id == SaleItem.sale_id)
+                    .filter(Sale.status == 'completed', *window)
+                    .group_by(SaleItem.product_name)
+                    .order_by(func.sum(SaleItem.quantity).desc())
+                    .limit(10).all())
+
+    return render_template('pos/summary.html',
+                           day=day,
+                           completed=completed,
+                           paid=paid,
+                           pending=pending,
+                           failed=failed,
+                           voided=voided,
+                           by_method=by_method,
+                           by_cashier=by_cashier,
+                           best_sellers=best_sellers)
 
 
 # ============================================================================

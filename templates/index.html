@@ -1,10 +1,18 @@
 ﻿{% extends "base.html" %}
-{% from "_macros.html" import verified_badge %}
+{% from "_macros.html" import verified_badge, picture with context %}
 {% from "_icons.html" import social_row with context %}
 {% block title %}BioFarm Fruits - Fresh Fruits & Seedlings{% endblock %}
+{% block preload %}
+{% if hero_tiles %}
+{% set hero_srcset = image_srcset(hero_tiles[0].image) %}
+<link rel="preload" as="image" href="{{ image_src(hero_tiles[0].image, size='thumb') }}"
+      {% if hero_srcset %}imagesrcset="{{ hero_srcset }}" imagesizes="(min-width: 1024px) 24vw, 48vw"{% endif %}
+      fetchpriority="high">
+{% endif %}
+{% endblock %}
 {% block content %}
 <section class="overflow-hidden rounded bg-slate-900 text-white shadow-sm">
-    <div class="grid min-h-[520px] gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+    <div class="grid min-h-[520px] gap-8 {% if hero_tiles %}lg:grid-cols-[1.05fr_0.95fr]{% endif %}">
         <div class="flex flex-col justify-center p-6 md:p-12">
             <p class="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-300">{{ content('hero_tagline', 'Welcome to BioFarm Fruits') }}</p>
             <h1 class="max-w-3xl text-4xl font-extrabold leading-tight md:text-6xl">{{ content('hero_title', 'Quality Dragon Fruits & Seedlings') }}</h1>
@@ -14,12 +22,17 @@
                 <a href="/contact" class="rounded border border-white/40 px-6 py-3 font-bold text-white">Contact Us</a>
             </div>
         </div>
-        <div class="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 md:p-6">
-            <img class="h-full min-h-48 w-full rounded object-cover" src="{{ image_src(content('hero_image_1', 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400')) }}" alt="Dragon Fruit">
-            <img class="h-full min-h-48 w-full rounded object-cover" src="{{ image_src(content('hero_image_2', 'https://images.unsplash.com/photo-1601039641847-7857b994d704?w=400')) }}" alt="Avocado">
-            <img class="h-full min-h-48 w-full rounded object-cover" src="{{ image_src(content('hero_image_3', 'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=400')) }}" alt="Seedlings">
-            <img class="h-full min-h-48 w-full rounded object-cover" src="{{ image_src(content('hero_image_4', 'https://images.unsplash.com/photo-1519162808019-7de1683fa2ad?w=400')) }}" alt="Fruits">
+        {% if hero_tiles %}
+        <div class="grid grid-cols-2 gap-3 p-4 md:p-6">
+            {% for tile in hero_tiles %}
+            <div class="aspect-[4/3] overflow-hidden rounded bg-slate-800 md:aspect-[3/4]">
+                {{ picture(tile.image, tile.alt, 'h-full w-full object-cover',
+                           '(min-width: 1024px) 24vw, 48vw',
+                           eager=True, priority=loop.first) }}
+            </div>
+            {% endfor %}
         </div>
+        {% endif %}
     </div>
 </section>
 
@@ -35,9 +48,9 @@
             <span class="absolute left-3 top-3 z-10 rounded bg-amber-400 px-2 py-1 text-xs font-bold text-slate-950 shadow">Featured</span>
             <div class="aspect-[4/3] bg-slate-100">
                 {% if product.image %}
-                <img src="{{ image_src(product.image) }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400'">
+                {{ picture(product.image, product.name) }}
                 {% else %}
-                <div class="flex h-full items-center justify-center text-slate-400">{{ product.name }}</div>
+                <div class="flex h-full items-center justify-center px-3 text-center text-slate-400">{{ product.name }}</div>
                 {% endif %}
             </div>
             <div class="p-4">
@@ -73,9 +86,9 @@
         <article class="overflow-hidden rounded bg-white shadow-sm">
             <div class="aspect-[4/3] bg-slate-100">
                 {% if product.image %}
-                <img src="{{ image_src(product.image) }}" alt="{{ product.name }}" class="h-full w-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1615485290382-441e4d049cb5?w=400'">
+                {{ picture(product.image, product.name) }}
                 {% else %}
-                <div class="flex h-full items-center justify-center text-slate-400">{{ product.name }}</div>
+                <div class="flex h-full items-center justify-center px-3 text-center text-slate-400">{{ product.name }}</div>
                 {% endif %}
             </div>
             <div class="p-4">

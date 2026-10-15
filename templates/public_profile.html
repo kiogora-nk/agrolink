@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import verified_badge, avatar %}
+{% from "_macros.html" import verified_badge, avatar, picture with context %}
 {% block title %}{{ profile_user.username }} - BioFarm Fruits{% endblock %}
 {% block content %}
 <section class="max-w-5xl mx-auto space-y-6">
@@ -46,7 +46,7 @@
             <a href="{{ url_for('product_detail', id=item.id) }}" class="bg-white p-3 rounded shadow hover:shadow-lg transition">
                 <div class="aspect-square bg-gray-100 rounded overflow-hidden">
                     {% if item.image %}
-                    <img src="{{ image_src(item.image) }}" alt="{{ item.name }}" class="w-full h-full object-cover">
+                    {{ picture(item.image, item.name, sizes='(min-width: 640px) 22vw, 45vw') }}
                     {% endif %}
                 </div>
                 <p class="font-semibold mt-2">{{ item.name }}</p>

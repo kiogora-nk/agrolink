@@ -5,7 +5,9 @@
     <div class="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center">
         <div class="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-amber-300 bg-amber-100 flex items-center justify-center">
             {% if current_user.avatar %}
-            <img src="{{ current_user.avatar }}" alt="{{ current_user.username }}" class="h-full w-full object-cover">
+            <img src="{{ image_src(current_user.avatar, size='thumb') }}" alt="{{ current_user.username }}" class="h-full w-full object-cover"
+                 loading="lazy" decoding="async"
+                 onerror="imgFallback(this)">
             {% else %}
             <span class="text-2xl font-bold text-amber-800">{{ current_user.username[0].upper() }}</span>
             {% endif %}
