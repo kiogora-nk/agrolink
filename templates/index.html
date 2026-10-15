@@ -12,7 +12,7 @@
 {% endblock %}
 {% block content %}
 <section class="overflow-hidden rounded bg-slate-900 text-white shadow-sm">
-    <div class="grid min-h-[520px] gap-8 {% if hero_tiles %}lg:grid-cols-[1.05fr_0.95fr]{% endif %}">
+    <div class="grid min-h-[520px] gap-8 {% if hero_tiles %} lg:grid-cols-[1.05fr_0.95fr] {% endif %}">
         <div class="flex flex-col justify-center p-6 md:p-12">
             <p class="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-300">{{ content('hero_tagline', 'Welcome to BioFarm Fruits') }}</p>
             <h1 class="max-w-3xl text-4xl font-extrabold leading-tight md:text-6xl">{{ content('hero_title', 'Quality Dragon Fruits & Seedlings') }}</h1>
@@ -25,7 +25,7 @@
         {% if hero_tiles %}
         <div class="grid grid-cols-2 gap-3 p-4 md:p-6">
             {% for tile in hero_tiles %}
-            <div class="aspect-[4/3] overflow-hidden rounded bg-slate-800 md:aspect-[3/4]">
+            <div class="aspect-[4/3] overflow-hidden rounded bg-slate-800">
                 {{ picture(tile.image, tile.alt, 'h-full w-full object-cover',
                            '(min-width: 1024px) 24vw, 48vw',
                            eager=True, priority=loop.first) }}
