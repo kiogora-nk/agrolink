@@ -42,15 +42,20 @@
             <p class="mt-2 text-xs text-slate-500">All orders and questions are handled by our team — we connect you with the seller and arrange delivery.</p>
             {% endif %}
 
+            {% if product.stock > 0 %}
             {% if current_user.is_authenticated %}
             <div class="mt-6 rounded border border-slate-200 p-4">
                 <h2 class="font-bold">Order Now</h2>
                 <form method="POST" action="{{ url_for('place_order', product_id=product.id) }}" class="mt-4">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="mb-3">
-                        <label class="block text-sm font-medium">Quantity</label>
-                        <input type="number" name="quantity" min="1" max="{{ product.stock }}" value="1" class="mt-1 w-28 rounded border px-3 py-2">
-                    </div>
+    <label class="block text-sm font-medium">Quantity</label>
+    <input type="number" name="quantity" 
+           min="1" 
+           max="{% if product.stock > 0 %}{{ product.stock }}{% else %}1{% endif %}" 
+           value="1" 
+           class="mt-1 w-28 rounded border px-3 py-2">
+</div>
                     <div class="mb-3">
                         <label class="block text-sm font-medium">Delivery Address <span class="text-red-600">*</span></label>
                         <input type="text" name="delivery_address" required placeholder="e.g. Plot 12, Kangemi Road, Nairobi" class="mt-1 w-full rounded border px-3 py-2">
@@ -70,6 +75,13 @@
             </div>
             {% else %}
             <a href="/login" class="mt-6 inline-block rounded bg-amber-600 px-6 py-3 font-bold text-white hover:bg-amber-700">Login to Order</a>
+            {% endif %}
+            {% else %}
+            <div class="mt-6 rounded border border-slate-200 bg-slate-50 p-4">
+                <h2 class="font-bold">Out of Stock</h2>
+                <p class="mt-1 text-sm text-slate-600">This product is currently unavailable. Please check back later, or
+                    <a href="{{ url_for('contact') }}" class="font-semibold text-amber-700 underline">ask us about availability</a>.</p>
+            </div>
             {% endif %}
         </div>
     </div>

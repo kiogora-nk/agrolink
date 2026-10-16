@@ -11,6 +11,7 @@ from app import User, Product, Order
 client = app.test_client()
 
 BUYER = 'diag_qty_buyer'
+TEMP_PRODUCT = 'diag_zero_stock'
 
 
 def token(html):
@@ -24,7 +25,8 @@ def cleanup():
         if user:
             Order.query.filter_by(user_id=user.id).delete()
             db.session.delete(user)
-            db.session.commit()
+        Product.query.filter_by(name=TEMP_PRODUCT).delete()
+        db.session.commit()
 
 
 cleanup()
@@ -84,6 +86,28 @@ print('== [4] over-stock still blocked ==')
 r = place(stock_before + 999)
 print('rejected:', 'only' in r.get_data(as_text=True).lower(),
       '| orders:', orders_count())
+
+print('== [5] stock 0 -> out-of-stock notice, no impossible min/max ==')
+with app.app_context():
+    zero = Product(name=TEMP_PRODUCT, price=10.0, stock=0,
+                   status='approved', description='diagnostic row')
+    db.session.add(zero)
+    db.session.commit()
+    zero_id = zero.id
+html = client.get(f'/product/{zero_id}').get_data(as_text=True)
+print('out-of-stock shown:', 'Out of Stock' in html,
+      '| quantity field gone:', 'name="quantity"' not in html,
+      '| no min>max contradiction:', 'min="1" max="0"' not in html)
+
+print('== [6] stock back -> quantity field returns with a usable max ==')
+with app.app_context():
+    p = db.session.get(Product, zero_id)
+    p.stock = 4
+    db.session.commit()
+html = client.get(f'/product/{zero_id}').get_data(as_text=True)
+print('quantity field back:', 'name="quantity"' in html,
+      '| max=4:', 'max="4"' in html,
+      '| out-of-stock gone:', 'Out of Stock' not in html)
 
 cleanup()
 print('== cleanup done ==')
