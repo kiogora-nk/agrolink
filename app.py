@@ -1920,6 +1920,9 @@ def place_order(product_id):
         return redirect(url_for('product_detail', id=product_id))
     
     quantity = request.form.get('quantity', 1, type=int)
+    if quantity is None or quantity < 1:
+        flash('Please order at least 1 unit.', 'error')
+        return redirect(url_for('product_detail', id=product_id))
     if quantity > product.stock:
         flash(f'Only {product.stock} units available.', 'error')
         return redirect(url_for('product_detail', id=product_id))
