@@ -3,7 +3,7 @@ services:
     name: agrolink
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn wsgi:app --workers 2 --timeout 120
+    startCommand: gunicorn wsgi:app --workers 1 --threads 4 --worker-class gthread --timeout 120
     envVars:
       - key: SECRET_KEY
         sync: false
