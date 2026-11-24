@@ -1,6 +1,7 @@
 ﻿{% extends "base.html" %}
 {% from "_icons.html" import social_row, icon_phone, icon_whatsapp, icon_mail with context %}
-{% block title %}Contact Us - BioFarm Fruits{% endblock %}
+{% block title %}Contact Us{% endblock %}
+{% block meta_description %}Contact {{ company_name }} in {{ company_address }}. Call {{ company_phone }}, WhatsApp {{ company_whatsapp }} or email {{ company_email }} to order or ask a question.{% endblock %}
 {% block content %}
 <section class="max-w-4xl mx-auto">
     <h1 class="text-3xl font-bold mb-6">Contact Us</h1>

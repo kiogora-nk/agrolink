@@ -12,7 +12,42 @@
     {% else %}
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230f172a'/><circle cx='32' cy='32' r='14' fill='%23fbbf24'/></svg>">
     {% endif %}
-    <title>BioFarm Fruits - {% block title %}{% endblock %}</title>
+    {#- Blocks a page can override. Declared here, inside a branch that never
+        renders, so base.html can read them with self.<name>() below. -#}
+    {%- if false %}{% block title %}{% endblock %}{% block meta_description %}{% endblock %}{% block meta_robots %}{% endblock %}{% block og_image %}{% endblock %}{% endif -%}
+    {#- Page titles: a child sets {% block title %}; the brand is appended once,
+        never doubled ("Contact Us | BioFarm Fruits"). -#}
+    {%- set _page_title = self.title()|trim -%}
+    {%- if not _page_title -%}{% set _full_title = company_name %}
+    {%- elif company_name in _page_title -%}{% set _full_title = _page_title %}
+    {%- else -%}{% set _full_title = _page_title ~ ' | ' ~ company_name %}{%- endif %}
+    <title>{{ _full_title }}</title>
+    {%- set _description = self.meta_description()|trim or
+          'Fresh dragon fruits and quality avocado seedlings from ' ~ company_name ~
+          ', Kenya. Order online, by phone or on WhatsApp, and book practical farming training.' %}
+    <meta name="description" content="{{ _description }}">
+    {% if page_noindex or self.meta_robots()|trim %}
+    <meta name="robots" content="{{ self.meta_robots()|trim or 'noindex, follow' }}">
+    {% else %}
+    <link rel="canonical" href="{{ canonical_url }}">
+    {% endif %}
+    {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}">{% endif %}
+    {#- Social previews (WhatsApp, Facebook, X). og:image must be absolute. -#}
+    {%- set _og_image = self.og_image()|trim or (absolute_url(static_v(logo_file)) if logo_file else '') %}
+    <meta property="og:site_name" content="{{ company_name }}">
+    <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+    <meta property="og:title" content="{{ _page_title or company_name }}">
+    <meta property="og:description" content="{{ _description }}">
+    <meta property="og:url" content="{{ canonical_url }}">
+    <meta property="og:locale" content="en_KE">
+    {% if _og_image %}<meta property="og:image" content="{{ _og_image }}">{% endif %}
+    <meta name="twitter:card" content="{{ 'summary_large_image' if self.og_image()|trim else 'summary' }}">
+    {% if request.path == '/' %}
+    <script type="application/ld+json">{{ json_ld({'@context': 'https://schema.org', '@graph': [organization_ld,
+        {'@type': 'WebSite', '@id': public_base_url ~ '/#website', 'url': public_base_url ~ '/',
+         'name': company_name, 'publisher': {'@id': public_base_url ~ '/#organization'}}]}) }}</script>
+    {% endif %}
+    {% block structured_data %}{% endblock %}
     {% if tailwind_css %}
     <link rel="stylesheet" href="{{ static_v(tailwind_css) }}">
     {% else %}
@@ -444,5 +479,12 @@
     </script>
 
     {% block scripts %}{% endblock %}
+    {% if cf_beacon_token and not page_noindex %}
+    {#- Cloudflare Web Analytics: free, sets no cookies and collects no
+        personal data, so it needs no consent banner. Deferred, so it never
+        delays the page. Off unless CF_BEACON_TOKEN is set. -#}
+    <script defer src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon='{"token": "{{ cf_beacon_token }}"}'></script>
+    {% endif %}
 </body>
 </html>

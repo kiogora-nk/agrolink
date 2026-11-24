@@ -24,19 +24,32 @@ an admin panel.
 - **PDF:** ReportLab + qrcode
 - **Deployment:** Render (see `render.yaml`)
 
-## Local Development
+## Local Development (Windows PowerShell)
 
-```bash
-python -m venv venv
-venv\Scripts\activate            # Windows
-pip install -r requirements.txt
+Production runs Python 3.11 (`runtime.txt`), so use the same locally. With
+[uv](https://docs.astral.sh/uv/) installed:
 
-copy .env.example .env           # then edit .env with real values
-python app.py
+```powershell
+uv venv .venv --python 3.11
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+Copy-Item .env.example .env      # then edit .env with real values
+.venv\Scripts\python.exe app.py
 ```
 
 The app runs at http://localhost:5000 and prints the seeded staff login on first start.
 **Change the seeded passwords immediately** (Profile → Change Password) before going live.
+
+> If `.env` holds the production `DATABASE_URL`, `python app.py` works on live data.
+> Remove that line locally to use a throwaway SQLite database instead.
+
+### Tests
+
+Each script builds its own throwaway SQLite database and sends no email:
+
+```powershell
+.venv\Scripts\python.exe _test_order_reliability.py
+.venv\Scripts\python.exe _test_seo_and_images.py
+```
 
 ## Configuration
 
@@ -45,23 +58,20 @@ Copy `.env.example` to `.env` and fill in:
 | Variable | Purpose |
 |---|---|
 | `SECRET_KEY` | Flask session/token signing key (long random string) |
-| `SITE_URL` | Public base URL (used in emailed links) |
+| `SITE_URL` | Public base URL, e.g. `https://biofarmfruits.co.ke` (canonical links, sitemap, emails) |
 | `MAIL_*` | Gmail SMTP credentials (app password) for outgoing email |
 | `COMPANY_*` | Contact details, social links shown across the site |
 | `DATABASE_URL` | PostgreSQL connection string in production (omit for SQLite) |
 | `CROP_VISION_API_KEY` / `CROP_VISION_MODEL` | Optional: image-based disease detection |
+| `CLOUDINARY_URL` | Image storage on Cloudinary (production). Unset = images stored in the database |
+| `GOOGLE_SITE_VERIFICATION` | Optional: Google Search Console HTML-tag verification value |
+| `CF_BEACON_TOKEN` | Optional: Cloudflare Web Analytics (cookieless) |
 
-## Deployment (Render)
+## Deployment
 
-The repo ships a Render blueprint (`render.yaml`) that creates a web service and a
-PostgreSQL database. In the Render dashboard set at least `SECRET_KEY` and `SITE_URL`,
-plus the mail variables if you want email delivery.
-
-Notes:
-
-- Use gunicorn (the blueprint's start command) — never `python app.py` in production.
-- Render's free tier has an ephemeral filesystem: uploaded images and SQLite data do not
-  survive restarts. Point `DATABASE_URL` at the blueprint's Postgres for real data.
+See **[DEPLOYMENT.md](DEPLOYMENT.md)**: free hosting setup (Render, Neon, Cloudinary,
+Cloudflare), Google Search Console, recovering from a database-quota outage,
+backups and rollback.
 
 ## Security
 

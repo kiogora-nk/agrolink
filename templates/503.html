@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Temporarily unavailable - {{ company_name }}{% endblock %}
+{% block meta_robots %}noindex{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-xl py-12 text-center">
+    <h1 class="text-2xl font-bold text-slate-900 sm:text-3xl">We'll be back shortly</h1>
+    <p class="mt-3 text-base text-slate-600">
+        Our product list is temporarily unavailable. Nothing is wrong with your
+        phone or connection. Please try again in a few minutes.
+    </p>
+    <p class="mt-3 text-base text-slate-600">
+        You can still order or ask a question directly:
+    </p>
+    <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+        {% if whatsapp_url and whatsapp_url != '#' %}
+        <a href="{{ whatsapp_url }}" target="_blank" rel="noopener"
+           class="rounded bg-green-700 px-6 py-3 font-semibold text-white hover:bg-green-800">WhatsApp {{ company_whatsapp }}</a>
+        {% endif %}
+        <a href="{{ tel_link(company_phone) }}"
+           class="rounded border border-slate-300 px-6 py-3 font-semibold text-slate-800 hover:bg-slate-50">Call {{ company_phone }}</a>
+    </div>
+    <a href="{{ request.path }}" class="mt-6 inline-block font-semibold text-amber-700 underline">Try again</a>
+</div>
+{% endblock %}

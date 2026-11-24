@@ -3,10 +3,10 @@ BioFarm Fruits - Complete Integrated Application
 All features working together: Products, Orders, Contact, Training, CMS, Admin
 """
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file, send_from_directory, g, make_response
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file, send_from_directory, g, make_response, abort
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import cast, func, or_, text, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DisconnectionError, IntegrityError, OperationalError
 from sqlalchemy.orm import joinedload, selectinload
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_wtf.csrf import CSRFProtect, generate_csrf
@@ -18,6 +18,8 @@ import re
 import secrets
 import json
 import base64
+import time
+from urllib.parse import quote
 from io import BytesIO
 
 import qrcode
@@ -32,6 +34,7 @@ import crop_ai  # trained crop-disease classifier (local module, no heavy deps)
 import notifications  # email + WhatsApp/SMS link helpers
 import pdf_reports  # receipt / monthly-report PDF + CSV builders
 import climate_service  # Open-Meteo climate checker
+import image_storage  # Cloudinary uploads (off the database), when configured
 
 # ============================================================================
 # APP INITIALIZATION
@@ -94,6 +97,20 @@ app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.environ.get(
     'MAIL_DEFAULT_SENDER', app.config['COMPANY_EMAIL'])
 
+# Render sets RENDER=true (the old check compared it with '1', so production
+# never counted as production: session cookies went out without Secure).
+_IS_PRODUCTION = (os.environ.get('FLASK_ENV') == 'production'
+                  or os.environ.get('RENDER', '').lower() in ('1', 'true'))
+if _IS_PRODUCTION:
+    # Render terminates TLS and forwards the original scheme in
+    # X-Forwarded-Proto. Trusting that one header lets request.is_secure,
+    # url_for(_external=True) and HSTS see the real https scheme.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1)
+    app.config['REMEMBER_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['REMEMBER_COOKIE_HTTPONLY'] = True
+
 db = SQLAlchemy(app)
 notifications.init_mail(app)
 csrf = CSRFProtect(app)
@@ -122,14 +139,22 @@ try:
     }
     # Local dev runs over plain http (incl. LAN testing from a phone); only
     # enforce HTTPS in production.
-    _is_prod = (os.environ.get('FLASK_ENV') == 'production'
-                or os.environ.get('RENDER') == '1')
+    if os.environ.get('CF_BEACON_TOKEN'):
+        # Cloudflare Web Analytics (cookieless) - see base.html.
+        _csp['script-src'].append('https://static.cloudflareinsights.com')
+        _csp['connect-src'].append('https://cloudflareinsights.com')
     Talisman(
         app,
         content_security_policy=_csp,
-        force_https=_is_prod,
-        strict_transport_security=_is_prod,
-        session_cookie_secure=_is_prod,
+        # Render already redirects http to https at its edge; repeating it
+        # here adds nothing and risks a redirect loop if a proxy header is
+        # ever missing. Opt in with FORCE_HTTPS=1 if hosting elsewhere.
+        force_https=os.environ.get('FORCE_HTTPS') == '1',
+        strict_transport_security=_IS_PRODUCTION,
+        # Not includeSubDomains: a browser would then refuse any subdomain
+        # of the domain that is not on https, for a year.
+        strict_transport_security_include_subdomains=False,
+        session_cookie_secure=_IS_PRODUCTION,
     )
 except ImportError:  # pragma: no cover - older environments without the dep
     pass
@@ -327,6 +352,10 @@ def image_src(value, size=None):
     value = value.strip()
     if not value:
         return placeholder_image()
+    if image_storage.is_cloudinary_url(value):
+        # Resized and served as AVIF/WebP by Cloudinary's CDN.
+        return image_storage.variant(
+            value, image_storage.THUMB_WIDTH if size == 'thumb' else image_storage.FULL_WIDTH)
     if value.startswith(('http://', 'https://', 'data:', 'blob:')):
         return value
     if value.startswith('/') and not value.startswith('/uploads/'):
@@ -346,8 +375,12 @@ def image_srcset(value):
     Empty when there is only one real resolution to offer (external URLs and
     images uploaded before thumbnails existed), so the browser simply uses
     ``src``. Widths are the true stored widths, never guesses — a wrong ``w``
-    descriptor makes the browser pick a blurry file.
+    descriptor makes the browser pick a blurry file. Cloudinary images are the
+    exception that proves it: c_limit never upscales, so there an overstated
+    width can only return the original, never a smaller file.
     """
+    if image_storage.is_cloudinary_url(value):
+        return image_storage.srcset(value.strip())
     filename = upload_filename(value)
     if not upload_available(filename):
         return ''
@@ -492,16 +525,36 @@ def _convert_image_to_jpeg(data):
         return None, 'That file could not be read as an image. Please upload a JPG, PNG, WEBP or GIF picture.'
 
 
+class SavedImage:
+    """Result of a successful upload.
+
+    ``ref`` is the value to store in an image column: a Cloudinary URL when
+    Cloudinary is configured, otherwise ``/uploads/<filename>``.
+    ``local_path`` is the copy on this server's disk, for code that needs the
+    bytes during the same request (the crop-disease detector). On Render
+    that copy disappears at the next deploy, which is why it is never the
+    stored reference.
+    """
+    __slots__ = ('ref', 'filename', 'local_path')
+
+    def __init__(self, ref, filename, local_path):
+        self.ref, self.filename, self.local_path = ref, filename, local_path
+
+
 def save_uploaded_image(file_storage):
-    """Save an uploaded image and return (stored_filename, error_message).
+    """Save an uploaded image and return (SavedImage, error_message).
 
     Returns (None, None) when no file was submitted, (None, message) when
-    the file was rejected, and (filename, None) on success.
+    the file was rejected, and (SavedImage, None) on success.
 
-    The file is written to the local uploads folder (local dev, and the
-    crop-disease detector reads it from there) AND stored in the database
-    so the image survives restarts and redeploys on hosts like Render
-    where the filesystem is wiped.
+    Where the bytes go:
+      * Cloudinary configured: uploaded there and served from its CDN. The
+        database never holds the bytes, so an image view never touches it.
+      * Otherwise (local dev / tests), or if the Cloudinary upload fails:
+        stored in the ``uploaded_images`` table as before, so an upload is
+        never lost because of an outage at Cloudinary.
+    A copy is always written to the local uploads folder for the
+    crop-disease detector, which reads the file from disk.
 
     Types browsers can't display (HEIC, TIFF, BMP, ...) are converted to
     JPEG first so they render on every device.
@@ -549,8 +602,20 @@ def save_uploaded_image(file_storage):
         mimetype = 'image/jpeg'
     elif ext == 'webp':
         mimetype = 'image/webp'
-    with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), 'wb') as fh:
+    local_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    with open(local_path, 'wb') as fh:
         fh.write(data)
+
+    if image_storage.enabled():
+        try:
+            uploaded = image_storage.upload(data, filename)
+            return SavedImage(uploaded['url'], filename, local_path), None
+        except image_storage.UploadError as exc:
+            # Fall through to database storage: the upload still succeeds for
+            # the user, and migrate_images_to_cloudinary.py moves it
+            # across later.
+            app.logger.error('Cloudinary upload failed, storing in DB instead: %s', exc)
+
     try:
         db.session.add(UploadedImage(
             filename=filename,
@@ -566,7 +631,7 @@ def save_uploaded_image(file_storage):
     except Exception as exc:  # noqa: BLE001 - disk copy still works
         db.session.rollback()
         app.logger.error('Failed to persist uploaded image to DB: %s', exc)
-    return filename, None
+    return SavedImage(f'/uploads/{filename}', filename, local_path), None
 
 # ============================================================================
 # MODELS - Complete Database Schema
@@ -647,6 +712,13 @@ class Order(db.Model):
     delivery_phone = db.Column(db.String(20))
     notes = db.Column(db.Text)
     receipt_number = db.Column(db.String(20), unique=True)
+    # One-shot token from the order form, unique in the database, so a
+    # double-click, an F5 refresh or a network retry cannot create a second
+    # order. Mirrors Sale.idempotency_key on the POS till rather than
+    # inventing a second convention. NULL for rows created before this
+    # existed, and both Postgres and SQLite treat NULLs as distinct in a
+    # unique index, so those legacy rows never collide with each other.
+    idempotency_key = db.Column(db.String(64), unique=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     delivered_at = db.Column(db.DateTime)
     
@@ -1066,7 +1138,192 @@ def inject_globals():
                            .filter_by(user_id=current_user.id)
                            .order_by(Notification.created_at.desc()).limit(5).all())
             if current_user.is_authenticated else []),
+        **seo_globals(),
     }
+
+# ============================================================================
+# SEO: canonical URLs, indexing rules, robots.txt, sitemap.xml
+# ============================================================================
+
+# Paths that must never appear in search results: accounts, admin, the till,
+# transactional endpoints. robots.txt asks crawlers not to fetch them and the
+# X-Robots-Tag header below keeps them out of the index if a link leaks.
+PRIVATE_PATH_PREFIXES = (
+    '/admin', '/chief-admin', '/pos', '/dashboard', '/my-orders', '/profile',
+    '/notifications', '/order/', '/place-order', '/change-password',
+    '/upload-product', '/report-issue', '/request-admin-reset', '/api/',
+    '/logout', '/reset-password',
+)
+# Crawlable (so the noindex is seen) but not worth a search result.
+NOINDEX_PATHS = ('/login', '/register', '/forgot-password', '/u/')
+
+# Query parameters that genuinely change the content of a public listing.
+# Everything else (search terms, tracking tags) is dropped from the canonical
+# URL so it cannot spawn duplicate pages.
+CANONICAL_QUERY_PARAMS = ('category', 'page')
+
+SITEMAP_CACHE_SECONDS = 3600
+_sitemap_cache = {'xml': None, 'built': 0.0}
+
+
+def public_base_url():
+    """Absolute origin for canonical links, the sitemap and social tags.
+
+    SITE_URL wins when it is a real address. A localhost value (the default
+    in .env.example) is ignored rather than published: canonical links to
+    localhost would tell Google the real pages are duplicates of nothing.
+    """
+    configured = (os.environ.get('SITE_URL') or '').strip().rstrip('/')
+    if configured and not any(h in configured for h in ('localhost', '127.0.0.1')):
+        return configured
+    try:
+        return request.host_url.rstrip('/')
+    except RuntimeError:  # no request context (scripts)
+        return configured or 'http://localhost:5000'
+
+
+def canonical_url():
+    args = [(k, request.args.get(k)) for k in CANONICAL_QUERY_PARAMS
+            if request.args.get(k) and not (k == 'page' and request.args.get(k) == '1')
+            and not (k == 'category' and request.args.get(k) == 'all')]
+    query = '&'.join(f'{k}={quote(v, safe="")}' for k, v in args)
+    return public_base_url() + request.path + (f'?{query}' if query else '')
+
+
+def absolute_url(path_or_url):
+    """Make an image/link absolute, as Open Graph and JSON-LD require."""
+    if not path_or_url:
+        return ''
+    if path_or_url.startswith(('http://', 'https://')):
+        return path_or_url
+    return public_base_url() + (path_or_url if path_or_url.startswith('/') else '/' + path_or_url)
+
+
+def meta_description(text, limit=158):
+    """Plain-text summary for <meta name="description">: tags stripped,
+    whitespace collapsed, cut at a word boundary."""
+    plain = re.sub(r'<[^>]+>', ' ', text or '')
+    plain = re.sub(r'\s+', ' ', plain).strip()
+    if len(plain) <= limit:
+        return plain
+    return plain[:limit].rsplit(' ', 1)[0].rstrip(',.;:-') + '…'
+
+
+def json_ld(data):
+    """Serialise structured data for a <script type="application/ld+json">.
+
+    ``<`` is escaped so text in a product name or blog title can never close
+    the script element early.
+    """
+    from markupsafe import Markup
+    return Markup(json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+                  .replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026'))
+
+
+def _is_noindex_path(path):
+    return (path.startswith(PRIVATE_PATH_PREFIXES)
+            or path.startswith(NOINDEX_PATHS))
+
+
+def seo_globals():
+    """Template variables for the <head> tags in base.html."""
+    base = public_base_url()
+    same_as = [u for u in (app.config['COMPANY_TIKTOK'], app.config['COMPANY_YOUTUBE'],
+                           app.config['COMPANY_FACEBOOK'], app.config['COMPANY_INSTAGRAM'],
+                           app.config['COMPANY_X'], app.config['COMPANY_LINKEDIN'])
+               if u and u.startswith('http')]
+    logo = _logo_filename()
+    organization = {
+        '@type': 'Organization',
+        '@id': f'{base}/#organization',
+        'name': app.config['COMPANY_NAME'],
+        'url': f'{base}/',
+        'email': app.config['COMPANY_EMAIL'],
+        'telephone': app.config['COMPANY_PHONE'],
+        'address': {'@type': 'PostalAddress',
+                    'addressLocality': app.config['COMPANY_ADDRESS'].split(',')[0].strip(),
+                    'addressCountry': 'KE'},
+    }
+    if logo:
+        organization['logo'] = absolute_url(url_for('static', filename=logo))
+    if same_as:
+        organization['sameAs'] = same_as
+    return {
+        'canonical_url': canonical_url(),
+        'public_base_url': base,
+        'absolute_url': absolute_url,
+        'meta_description': meta_description,
+        'json_ld': json_ld,
+        'page_noindex': _is_noindex_path(request.path) or bool(request.args.get('search')),
+        'organization_ld': organization,
+        'google_site_verification': os.environ.get('GOOGLE_SITE_VERIFICATION', ''),
+        'cf_beacon_token': os.environ.get('CF_BEACON_TOKEN', ''),
+    }
+
+
+@app.after_request
+def _robots_header(response):
+    """Keep private and utility pages out of search results."""
+    if _is_noindex_path(request.path) or (
+            request.path == '/products' and request.args.get('search')):
+        response.headers.setdefault('X-Robots-Tag', 'noindex, nofollow'
+                                    if request.path.startswith(PRIVATE_PATH_PREFIXES)
+                                    else 'noindex, follow')
+    return response
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    lines = ['User-agent: *']
+    lines += [f'Disallow: {p}' for p in PRIVATE_PATH_PREFIXES if p != '/reset-password']
+    lines += ['Disallow: /reset-password/', '', f'Sitemap: {public_base_url()}/sitemap.xml', '']
+    response = make_response('\n'.join(lines))
+    response.mimetype = 'text/plain'
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    return response
+
+
+def _build_sitemap(base):
+    from xml.sax.saxutils import escape
+
+    def fmt(dt):
+        return dt.strftime('%Y-%m-%d') if dt else None
+
+    entries = [(f'{base}/', None), (f'{base}/products', None), (f'{base}/blog', None),
+               (f'{base}/training', None), (f'{base}/climate', None),
+               (f'{base}/disease-detection', None), (f'{base}/contact', None)]
+    # Only the columns needed: no descriptions, no image blobs, no farmers.
+    for pid, updated in (db.session.query(Product.id, Product.updated_at)
+                         .filter(Product.status == 'approved')
+                         .order_by(Product.id).all()):
+        entries.append((f'{base}/product/{pid}', fmt(updated)))
+    for slug, updated in (db.session.query(BlogPost.slug, BlogPost.updated_at)
+                          .filter(BlogPost.published.is_(True))
+                          .order_by(BlogPost.id).all()):
+        entries.append((f'{base}/blog/{quote(slug)}', fmt(updated)))
+    body = ''.join(
+        f'<url><loc>{escape(loc)}</loc>' + (f'<lastmod>{lm}</lastmod>' if lm else '') + '</url>'
+        for loc, lm in entries)
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f'{body}</urlset>\n')
+
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    """XML sitemap of every public, indexable page.
+
+    Built from two narrow queries and cached in memory for an hour, so a
+    crawler fetching it repeatedly does not keep the database awake.
+    """
+    now = time.time()
+    if not _sitemap_cache['xml'] or now - _sitemap_cache['built'] > SITEMAP_CACHE_SECONDS:
+        _sitemap_cache['xml'] = _build_sitemap(public_base_url())
+        _sitemap_cache['built'] = now
+    response = make_response(_sitemap_cache['xml'])
+    response.mimetype = 'application/xml'
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
 
 # ============================================================================
 # PUBLIC ROUTES
@@ -1093,10 +1350,20 @@ def home():
                 .options(joinedload(Product.farmer))
                 .order_by(Product.created_at.desc())
                 .limit(8).all())
-    reviews = (Review.query
-               .options(joinedload(Review.user), joinedload(Review.product))
-               .order_by(Review.created_at.desc())
-               .limit(6).all())
+    # Reviews are decoration. If that table is unreadable the busiest page in
+    # the site still renders without its testimonial strip, rather than
+    # failing as a whole for content nobody came for. The product query above
+    # is deliberately NOT guarded: without products there is no homepage, and
+    # a genuine outage should surface as the 503 from the disconnect handler.
+    try:
+        reviews = (Review.query
+                   .options(joinedload(Review.user), joinedload(Review.product))
+                   .order_by(Review.created_at.desc())
+                   .limit(6).all())
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('Homepage reviews unavailable')
+        reviews = []
 
     # Hero tiles: the images an admin picked in the CMS first, then real
     # photographs of approved products to fill the remaining slots. The hero
@@ -1112,12 +1379,17 @@ def home():
             hero_tiles.append({'image': value,
                                'alt': get_content(f'hero_image_{slot}_alt') or 'BioFarm produce'})
     if len(hero_tiles) < 4:
-        candidates = (Product.query
-                      .filter(Product.status == 'approved',
-                              Product.image.isnot(None), Product.image != '')
-                      .options(joinedload(Product.farmer))
-                      .order_by(Product.featured.desc(), Product.created_at.desc())
-                      .limit(4).all())
+        try:
+            candidates = (Product.query
+                          .filter(Product.status == 'approved',
+                                  Product.image.isnot(None), Product.image != '')
+                          .options(joinedload(Product.farmer))
+                          .order_by(Product.featured.desc(), Product.created_at.desc())
+                          .limit(4).all())
+        except Exception:
+            db.session.rollback()
+            app.logger.exception('Homepage hero candidates unavailable')
+            candidates = []
         for product in candidates:
             if len(hero_tiles) >= 4:
                 break
@@ -1187,7 +1459,12 @@ def product_detail(id):
                          product=product,
                          reviews=reviews,
                          avg_rating=round(avg_rating, 1),
-                         related=related)
+                         related=related,
+                         # One-shot token for the order form below. Each render
+                         # gets a fresh one and it is unique in the database,
+                         # so a double-click or refresh on this page cannot
+                         # create a second order.
+                         order_token=secrets.token_urlsafe(16))
 
 @app.route('/product/<int:id>/review', methods=['POST'])
 @login_required
@@ -1378,7 +1655,7 @@ def disease_detection():
 
         result = None
         if saved:
-            image_path = os.path.join(app.config['UPLOAD_FOLDER'], saved)
+            image_path = saved.local_path
             result = crop_ai.predict_from_image(image_path, crop_type)
         if not result:
             result = crop_ai.predict(symptoms, crop_type)
@@ -1390,7 +1667,7 @@ def disease_detection():
             diagnosis=result['disease'],
             treatment=result['treatment'],
             confidence=result.get('confidence') or 0.0,
-            image=saved,
+            image=saved.ref if saved else None,
         )
         db.session.add(record)
         db.session.commit()
@@ -1730,7 +2007,11 @@ def dashboard():
 @login_required
 def my_orders():
     """View user orders"""
-    orders = Order.query.filter_by(user_id=current_user.id).order_by(Order.created_at.desc()).all()
+    # joinedload: the template renders order.product.name for every row, which
+    # without this is one extra query per order.
+    orders = (Order.query.filter_by(user_id=current_user.id)
+              .options(joinedload(Order.product))
+              .order_by(Order.created_at.desc()).all())
     return render_template('my_orders.html', orders=orders)
 
 @app.route('/profile', methods=['GET', 'POST'])
@@ -1747,7 +2028,7 @@ def profile():
             flash(avatar_error, 'error')
             return redirect(url_for('profile'))
         if saved:
-            current_user.avatar = url_for('uploaded_file', filename=saved)
+            current_user.avatar = saved.ref
         db.session.commit()
         flash('Profile updated.', 'success')
         return redirect(url_for('profile'))
@@ -1912,17 +2193,32 @@ def _receipt_attachment(order):
 @login_required
 @_rate('20 per minute')
 def place_order(product_id):
-    """Place an order"""
+    """Place an order.
+
+    Three guarantees this route has to keep:
+
+    1. A saved order is never reported to the customer as a failure. The
+       commit happens first and everything after it (notifications, receipt,
+       email) is guarded, because a customer who sees an error for an order
+       that actually saved will simply order again.
+    2. Stock cannot be oversold when two orders race for the last unit. The
+       decrement is a single conditional UPDATE, not read-then-write.
+    3. Neither a double-click, a refresh nor a retry can create a second
+       order - the one-shot token is unique in the database, so the loser of
+       the race fails on the insert instead of duplicating the order.
+    """
     product = Product.query.get_or_404(product_id)
-    
+
     if product.stock <= 0:
         flash('This product is out of stock.', 'error')
         return redirect(url_for('product_detail', id=product_id))
-    
+
     quantity = request.form.get('quantity', 1, type=int)
     if quantity is None or quantity < 1:
         flash('Please order at least 1 unit.', 'error')
         return redirect(url_for('product_detail', id=product_id))
+    # Cheap check for the friendly message; the atomic reserve below is what
+    # actually enforces the limit.
     if quantity > product.stock:
         flash(f'Only {product.stock} units available.', 'error')
         return redirect(url_for('product_detail', id=product_id))
@@ -1938,26 +2234,74 @@ def place_order(product_id):
         flash('Please provide a delivery phone number so we can reach you about your order.', 'error')
         return redirect(url_for('product_detail', id=product_id))
 
+    token = (request.form.get('order_token') or '').strip() or None
+
+    # Reserve the stock first, in the same transaction as the order, so the
+    # two commit together or not at all. `stock >= quantity` is evaluated by
+    # the database while the row is locked, so a concurrent order for the last
+    # unit finds the row already reduced and matches nothing.
+    reserved = db.session.execute(
+        update(Product)
+        .where(Product.id == product_id, Product.stock >= quantity)
+        .values(stock=Product.stock - quantity)
+        .execution_options(synchronize_session=False)
+    ).rowcount
+
+    if not reserved:
+        db.session.rollback()
+        available = db.session.get(Product, product_id).stock
+        flash(f'Only {available} units available.', 'error')
+        return redirect(url_for('product_detail', id=product_id))
+
     order = Order(
         user_id=current_user.id,
         product_id=product_id,
         quantity=quantity,
+        # Priced from the product row we just locked, never from the browser.
         total_price=product.price * quantity,
         delivery_address=delivery_address,
         delivery_phone=delivery_phone,
-        notes=request.form.get('notes')
+        notes=request.form.get('notes'),
+        idempotency_key=token,
     )
-    product.stock -= quantity
     db.session.add(order)
-    db.session.flush()  # assign order.id before building the receipt number
-    order.order_number = order.order_number or f"ORD-{order.id:05d}"
-    order.generate_receipt_number()
-    db.session.commit()
+    try:
+        db.session.flush()  # assign order.id before building the receipt number
+        order.order_number = order.order_number or f"ORD-{order.id:05d}"
+        order.generate_receipt_number()
+        db.session.commit()
+    except IntegrityError:
+        # Lost the race on the unique token, or a replayed submission. Roll
+        # back so the stock reservation above is undone with it - the winning
+        # order already took those units.
+        db.session.rollback()
+        if token and Order.query.filter_by(idempotency_key=token).first() is not None:
+            flash('We already received this order - you have not been charged twice.', 'success')
+            return redirect(url_for('my_orders'))
+        # Some other constraint failed. Say so honestly rather than claiming a
+        # duplicate, and never report a success that did not happen.
+        app.logger.exception(
+            'Order insert failed: product=%s user=%s qty=%s', product_id, current_user.id, quantity)
+        flash('We could not save your order, so you have not been charged. Please try again.', 'error')
+        return redirect(url_for('product_detail', id=product_id))
+    except Exception:
+        db.session.rollback()
+        app.logger.exception(
+            'Order commit failed: product=%s user=%s qty=%s', product_id, current_user.id, quantity)
+        flash('We could not save your order, so you have not been charged. Please try again.', 'error')
+        return redirect(url_for('product_detail', id=product_id))
 
-    # Notify admins in-app + by email, and email the customer a confirmation.
-    _notify_new_order(order)
+    # The order is durable from here on. Nothing below is allowed to turn a
+    # success into an error page for the customer: a failed notification is
+    # logged and swallowed, because the order itself is already saved and
+    # visible to admins.
+    try:
+        _notify_new_order(order)
+    except Exception:
+        app.logger.exception('Post-order notification failed for order %s', order.id)
 
-    flash('Order placed successfully! We have received it and will be in touch shortly.', 'success')
+    flash(f'Order placed successfully! Your reference is {order.order_number}. '
+          'We have received it and will be in touch shortly.', 'success')
     return redirect(url_for('my_orders'))
 
 
@@ -2063,7 +2407,7 @@ def _save_product_from_form(product, form, files, allow_status=False):
     if image_error:
         return False, image_error
     if saved:
-        product.image = url_for('uploaded_file', filename=saved)
+        product.image = saved.ref
     elif image_url:
         # Users often paste links without the scheme; a scheme-less URL
         # would resolve as a broken relative path in the browser.
@@ -2331,14 +2675,20 @@ def admin_orders():
                           Product.name.ilike(like),
                           cast(Order.id, db.String).ilike(like),
                       )))
-    orders = query.order_by(Order.created_at.desc()).all()
-    counts = {
-        'all': Order.query.count(),
-        'pending': Order.query.filter_by(status='pending').count(),
-        'confirmed': Order.query.filter_by(status='confirmed').count(),
-        'delivered': Order.query.filter_by(status='delivered').count(),
-        'cancelled': Order.query.filter_by(status='cancelled').count(),
-    }
+    # Eager-load the customer and the product: the template reads order.user
+    # and order.product on every row, which without this is two extra queries
+    # per order (N+1) - the main reason this page slowed as orders piled up.
+    # Both are many-to-one, so joinedload cannot multiply the rows.
+    orders = (query.options(joinedload(Order.user), joinedload(Order.product))
+                   .order_by(Order.created_at.desc()).all())
+
+    # One grouped query instead of five COUNT round trips. ORDER_STATUSES is
+    # defined further down the module but is resolved at call time, not here.
+    by_status = dict(db.session.query(Order.status, func.count(Order.id))
+                     .group_by(Order.status).all())
+    counts = {'all': sum(by_status.values())}
+    for _status in ORDER_STATUSES:
+        counts[_status] = by_status.get(_status, 0)
     return render_template('admin/orders.html', orders=orders,
                            counts=counts, selected_status=status or 'all',
                            search_query=q)
@@ -3068,7 +3418,7 @@ def admin_cms():
                 if error:
                     flash(f'{key}: {error}', 'error')
                 elif uploaded:
-                    set_content(key, uploaded)
+                    set_content(key, uploaded.ref)
                 # empty upload = keep the current image (or its absence)
                 continue
             set_content(key, (request.form.get(key) or '').strip())
@@ -3133,7 +3483,7 @@ def admin_blog_new():
             flash(image_error, 'error')
             return render_template('admin/blog_form.html', post=None)
         if saved:
-            post.image = url_for('uploaded_file', filename=saved)
+            post.image = saved.ref
         elif request.form.get('image_url'):
             post.image = request.form.get('image_url').strip()
         db.session.add(post)
@@ -3159,7 +3509,7 @@ def admin_blog_edit(id):
             flash(image_error, 'error')
             return render_template('admin/blog_form.html', post=post)
         if saved:
-            post.image = url_for('uploaded_file', filename=saved)
+            post.image = saved.ref
         elif request.form.get('image_url'):
             post.image = request.form.get('image_url').strip()
         db.session.commit()
@@ -3235,6 +3585,37 @@ def server_error(e):
     app.logger.exception('Unhandled exception')
     reference = _log_error_report(e)
     return render_template('500.html', reference=reference), 500
+
+
+@app.errorhandler(DisconnectionError)
+@app.errorhandler(OperationalError)
+def database_unavailable(e):
+    """A dropped or refused database connection is an infrastructure fault,
+    not a bug in this particular request - so answer 503 "try again" rather
+    than the generic error page, which implies the request itself was wrong.
+
+    Note what this deliberately does NOT do: retry. Retrying a request that
+    might be an order creation is how you end up with two orders for one
+    click, since the first attempt may well have committed before the
+    connection died. Recovery is left to pool_pre_ping, which replaces the
+    dead connection for the *next* request.
+    """
+    db.session.rollback()
+    app.logger.warning(
+        'Database unavailable on %s %s: %s', request.method, request.path, e)
+    # Not written to error_reports: that table lives in the database that just
+    # failed, and trying would only add a second timeout to this response.
+    headers = {'Retry-After': '120', 'Cache-Control': 'no-store'}
+    try:
+        return render_template('503.html'), 503, headers
+    except Exception:  # noqa: BLE001 - the layout itself needed the database
+        db.session.rollback()
+        phone = app.config['COMPANY_PHONE']
+        return (f'<!doctype html><meta name="viewport" content="width=device-width">'
+                f'<title>Temporarily unavailable</title>'
+                f'<p style="font:16px sans-serif;padding:2rem">We will be back shortly. '
+                f'To order now, call or WhatsApp <a href="tel:{phone}">{phone}</a>.</p>',
+                503, headers)
 
 # ============================================================================
 # SEED DATA
@@ -3419,12 +3800,15 @@ def ensure_indexes():
     """
     from sqlalchemy import text, inspect as sa_inspect
     existing = set(sa_inspect(db.engine).get_table_names())
-    for name, table, columns in _INDEXES:
+    for name, table, columns, unique in (
+            [(n, t, c, False) for n, t, c in _INDEXES]
+            + [(n, t, c, True) for n, t, c in _UNIQUE_INDEXES]):
         if table not in existing:
             continue
         try:
             db.session.execute(text(
-                f'CREATE INDEX IF NOT EXISTS "{name}" ON "{table}" ({columns})'))
+                f'CREATE {"UNIQUE " if unique else ""}INDEX IF NOT EXISTS '
+                f'"{name}" ON "{table}" ({columns})'))
             db.session.commit()
         except Exception as exc:  # noqa: BLE001 - an index is never fatal
             db.session.rollback()
@@ -3457,6 +3841,27 @@ _INDEXES = [
     ('ix_sale_items_sale', 'sale_items', 'sale_id'),
     ('ix_sale_items_product', 'sale_items', 'product_id'),
     ('ix_stock_movements_product_created', 'stock_movements', 'product_id, created_at'),
+]
+
+# Unique indexes. Kept separate from _INDEXES because these enforce a rule
+# rather than only speeding a lookup, so they build with CREATE UNIQUE INDEX.
+# Each one needs a matching point in the code that relies on the database
+# rejecting the duplicate - a unique index with nothing depending on it is
+# just write overhead.
+#
+# Why this is needed *in addition to* unique=True on the column: sync_schema()
+# patches a missing column onto an existing table with a bare
+# `ALTER TABLE ... ADD COLUMN <type>`, which does not carry the UNIQUE part.
+# So on production - where `orders` already exists - idempotency_key would
+# arrive unconstrained and the duplicate protection would silently do nothing.
+# unique=True covers a brand-new database built by create_all(); this entry
+# covers every database that already has the table.
+_UNIQUE_INDEXES = [
+    # The one-shot order token. This index, not the browser, is what makes a
+    # replayed order POST impossible: two simultaneous requests carrying the
+    # same token race on the insert and exactly one wins. See
+    # Order.idempotency_key and place_order().
+    ('ux_orders_idempotency_key', 'orders', 'idempotency_key'),
 ]
 
 
@@ -3605,13 +4010,28 @@ def init_db():
     os.makedirs('templates/admin', exist_ok=True)
 
     with app.app_context():
-        db.create_all()
+        try:
+            db.create_all()
+        except (OperationalError, DisconnectionError) as exc:
+            # Database unreachable at boot (provider outage, exhausted
+            # free-tier quota). Raising here would stop gunicorn from booting
+            # at all, taking down even the pages that need no database. Boot
+            # anyway: DB-backed pages answer 503 through database_unavailable()
+            # and recover by themselves once the database is back. The schema
+            # steps below run again on the next deploy or restart.
+            db.session.rollback()
+            app.logger.error('Database unavailable at startup, skipping init: %s', exc)
+            return
         sync_schema()
         fix_id_sequences()
         ensure_indexes()
         seed_data()
-        backfill_uploads_to_db()
-        backfill_image_thumbnails()
+        if not image_storage.enabled():
+            # With Cloudinary on, new uploads never go into the database, so
+            # copying local files into it (and decoding stored blobs for
+            # thumbnails) at every boot would only add database load.
+            backfill_uploads_to_db()
+            backfill_image_thumbnails()
 
 
 def create_app():

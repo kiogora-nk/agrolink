@@ -1,6 +1,7 @@
 ﻿{% extends "base.html" %}
 {% from "_macros.html" import picture with context %}
-{% block title %}Products - BioFarm Fruits{% endblock %}
+{% block title %}{% if selected_category and selected_category != 'all' %}{{ selected_category|title }} for Sale{% if pagination and pagination.page > 1 %} (page {{ pagination.page }}){% endif %}{% else %}Shop Dragon Fruits, Avocado Seedlings & More{% if pagination and pagination.page > 1 %} (page {{ pagination.page }}){% endif %}{% endif %}{% endblock %}
+{% block meta_description %}{% if selected_category and selected_category != 'all' %}Buy {{ selected_category }} from {{ company_name }} in Kenya. See prices in KES and stock, then order online or on WhatsApp.{% else %}Browse dragon fruits, avocado seedlings and other produce from {{ company_name }}, Kenya, with prices in KES. Order online or on WhatsApp.{% endif %}{% endblock %}
 {% block content %}
 <section>
     <h1 class="text-3xl font-bold mb-6">Our Products</h1>

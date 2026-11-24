@@ -37,6 +37,25 @@ services:
         sync: false
       - key: CHIEF_ADMIN_EMAIL
         sync: false
+      # --- Image storage (Cloudinary free plan) ---
+      # Without this, uploads are stored as bytes in Postgres and served
+      # through the app - the load that exhausted the free Neon quota.
+      # Value: the "API environment variable" from the Cloudinary dashboard,
+      #   cloudinary://<api_key>:<api_secret>@<cloud_name>
+      # Then move existing images once: python migrate_images_to_cloudinary.py --apply
+      - key: CLOUDINARY_URL
+        sync: false
+      # --- SEO ---
+      # SITE_URL above must be the public address, e.g. https://biofarmfruits.co.ke
+      # (it is used for canonical links and the sitemap).
+      # Google Search Console > Add property > HTML tag: paste only the
+      # content="..." value here.
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false
+      # Optional, cookieless: Cloudflare dashboard > Analytics > Web Analytics
+      # > Add site > copy the token from the snippet.
+      - key: CF_BEACON_TOKEN
+        sync: false
       # Optional: enables image-based disease detection
       - key: CROP_VISION_API_KEY
         sync: false

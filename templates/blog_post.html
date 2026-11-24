@@ -1,6 +1,25 @@
 {% extends "base.html" %}
 {% from "_macros.html" import picture with context %}
 {% block title %}{{ post.title }}{% endblock %}
+{% block meta_description %}{%- set _summary = meta_description(post.body or '') -%}
+{{ _summary if _summary|length >= 70 else meta_description(post.title ~ (': ' ~ _summary if _summary else '') ~ ' From the ' ~ company_name ~ ' blog.') }}{% endblock %}
+{% block og_type %}article{% endblock %}
+{% block og_image %}{{ absolute_url(image_src(post.image)) if post.image else '' }}{% endblock %}
+{% block structured_data %}
+{%- set _article = {'@type': 'BlogPosting', 'headline': post.title[:110],
+    'description': meta_description(post.body or post.title),
+    'mainEntityOfPage': canonical_url,
+    'datePublished': post.created_at.isoformat() if post.created_at else None,
+    'dateModified': (post.updated_at or post.created_at).isoformat() if (post.updated_at or post.created_at) else None,
+    'author': {'@type': 'Organization', 'name': company_name, 'url': public_base_url ~ '/'},
+    'publisher': {'@id': public_base_url ~ '/#organization'}} %}
+{%- if post.image %}{% set _ = _article.update({'image': [absolute_url(image_src(post.image))]}) %}{% endif %}
+<script type="application/ld+json">{{ json_ld({'@context': 'https://schema.org', '@graph': [organization_ld, _article,
+    {'@type': 'BreadcrumbList', 'itemListElement': [
+        {'@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': public_base_url ~ '/'},
+        {'@type': 'ListItem', 'position': 2, 'name': 'Blog', 'item': public_base_url ~ '/blog'},
+        {'@type': 'ListItem', 'position': 3, 'name': post.title, 'item': canonical_url}]}]}) }}</script>
+{% endblock %}
 {% block content %}
 <article class="max-w-3xl mx-auto">
     <a href="{{ url_for('blog') }}" class="text-sm font-semibold text-amber-800 underline">&larr; Back to Blog</a>

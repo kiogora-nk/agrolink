@@ -1,7 +1,8 @@
 ﻿{% extends "base.html" %}
 {% from "_macros.html" import verified_badge, picture with context %}
 {% from "_icons.html" import social_row with context %}
-{% block title %}BioFarm Fruits - Fresh Fruits & Seedlings{% endblock %}
+{% block title %}Dragon Fruits & Avocado Seedlings in Kenya{% endblock %}
+{% block meta_description %}{{ meta_description(content('hero_subtitle', '') ~ ' Order online, by phone or on WhatsApp from ' ~ company_name ~ ', ' ~ company_address ~ '.') if content('hero_subtitle', '') else '' }}{% endblock %}
 {% block preload %}
 {% if hero_tiles %}
 {% set hero_srcset = image_srcset(hero_tiles[0].image) %}
